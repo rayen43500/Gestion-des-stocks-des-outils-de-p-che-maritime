@@ -42,6 +42,39 @@ export type ClientDto = {
   updatedAt: string
 }
 
+export type OrderItemDto = {
+  productId: string
+  quantity: number
+  unitPrice: number
+}
+
+export type OrderDto = {
+  _id: string
+  id: string
+  clientId: string
+  items: OrderItemDto[]
+  status: 'Draft' | 'Confirmed' | 'Delivered'
+  note: string
+  totalAmount: number
+  updatedAt: string
+}
+
+export type DeliveryItemDto = {
+  productId: string
+  quantityDelivered: number
+}
+
+export type DeliveryDto = {
+  _id: string
+  id: string
+  orderId: string
+  items: DeliveryItemDto[]
+  status: 'InTransit' | 'Delivered'
+  note: string
+  createdAt: string
+  updatedAt: string
+}
+
 type RequestOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   token?: string | null
@@ -215,4 +248,65 @@ export async function updateClient(
 
 export async function deleteClient(token: string, id: string) {
   return request(`/clients/${id}`, { method: 'DELETE', token })
+}
+
+export async function getOrders(token: string, search = '') {
+  const query = search ? `?search=${encodeURIComponent(search)}` : ''
+  return request<OrderDto[]>(`/orders${query}`, { token })
+}
+
+export async function getOrderDetail(token: string, id: string) {
+  return request<{ order: OrderDto; deliveries: DeliveryDto[] }>(`/orders/${id}`, { token })
+}
+
+export async function createOrder(
+  token: string,
+  payload: {
+    id: string
+    clientId: string
+    items: Array<{ productId: string; quantity: number; unitPrice: number }>
+    status: 'Draft' | 'Confirmed' | 'Delivered'
+    note: string
+  },
+) {
+  return request('/orders', { method: 'POST', token, body: payload })
+}
+
+export async function updateOrder(
+  token: string,
+  id: string,
+  payload: {
+    clientId: string
+    items: Array<{ productId: string; quantity: number; unitPrice: number }>
+    status: 'Draft' | 'Confirmed' | 'Delivered'
+    note: string
+  },
+) {
+  return request(`/orders/${id}`, { method: 'PUT', token, body: payload })
+}
+
+export async function deleteOrder(token: string, id: string) {
+  return request(`/orders/${id}`, { method: 'DELETE', token })
+}
+
+export async function getDeliveries(token: string, search = '') {
+  const query = search ? `?search=${encodeURIComponent(search)}` : ''
+  return request<DeliveryDto[]>(`/deliveries${query}`, { token })
+}
+
+export async function getDeliveryDetail(token: string, id: string) {
+  return request<{ delivery: DeliveryDto; order: OrderDto }>(`/deliveries/${id}`, { token })
+}
+
+export async function createDelivery(
+  token: string,
+  payload: {
+    id: string
+    orderId: string
+    items: Array<{ productId: string; quantityDelivered: number }>
+    status: 'InTransit' | 'Delivered'
+    note: string
+  },
+) {
+  return request('/deliveries', { method: 'POST', token, body: payload })
 }

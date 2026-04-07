@@ -10,14 +10,21 @@ const DEMO_ORDERS = [
   { id: 'CMD-412', client: 'Marina Atlas', total: 290, status: 'Delivered' },
 ];
 
-const MONTHLY_FLOWS = [
-  { month: 'Jan', value: 42 },
-  { month: 'Feb', value: 50 },
-  { month: 'Mar', value: 38 },
-  { month: 'Apr', value: 61 },
-  { month: 'May', value: 56 },
-  { month: 'Jun', value: 67 },
-];
+function getLastSixMonths() {
+  const now = new Date();
+  const months = [];
+
+  for (let i = 5; i >= 0; i -= 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({
+      year: date.getFullYear(),
+      month: date.getMonth() + 1,
+      label: date.toLocaleString('en', { month: 'short' }),
+    });
+  }
+
+  return months;
+}
 
 router.get('/', async (req, res) => {
   try {
@@ -28,12 +35,41 @@ router.get('/', async (req, res) => {
 
     const latestMovements = await StockMovement.find().sort({ createdAt: -1 }).limit(5);
 
+    const lastSixMonths = getLastSixMonths();
+    const firstMonth = lastSixMonths[0];
+    const fromDate = new Date(firstMonth.year, firstMonth.month - 1, 1);
+
+    const flowAggregation = await StockMovement.aggregate([
+      { $match: { createdAt: { $gte: fromDate } } },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$createdAt' },
+            month: { $month: '$createdAt' },
+          },
+          totalQty: { $sum: '$quantity' },
+        },
+      },
+    ]);
+
+    const flowMap = new Map(
+      flowAggregation.map((item) => [
+        `${item._id.year}-${item._id.month}`,
+        Number(item.totalQty || 0),
+      ]),
+    );
+
+    const monthlyFlows = lastSixMonths.map((item) => ({
+      month: item.label,
+      value: flowMap.get(`${item.year}-${item.month}`) || 0,
+    }));
+
     return res.json({
       totalProducts,
       stockAvailable,
       lowStockCount,
       recentOrders: DEMO_ORDERS,
-      monthlyFlows: MONTHLY_FLOWS,
+      monthlyFlows,
       latestMovements,
     });
   } catch (error) {

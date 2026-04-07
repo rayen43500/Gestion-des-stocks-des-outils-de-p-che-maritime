@@ -1,5 +1,7 @@
 const bcrypt = require('bcryptjs');
 const Client = require('../models/Client');
+const Delivery = require('../models/Delivery');
+const Order = require('../models/Order');
 const Product = require('../models/Product');
 const Supplier = require('../models/Supplier');
 const User = require('../models/User');
@@ -70,6 +72,33 @@ const DEFAULT_CLIENTS = [
   },
 ];
 
+const DEFAULT_ORDERS = [
+  {
+    id: 'CMD-500',
+    clientId: 'C-001',
+    items: [
+      { productId: 'P-001', quantity: 2, unitPrice: 380 },
+      { productId: 'P-002', quantity: 3, unitPrice: 120 },
+    ],
+    status: 'Confirmed',
+    note: 'Initial seeded order',
+    totalAmount: 1120,
+  },
+];
+
+const DEFAULT_DELIVERIES = [
+  {
+    id: 'BL-800',
+    orderId: 'CMD-500',
+    items: [
+      { productId: 'P-001', quantityDelivered: 1 },
+      { productId: 'P-002', quantityDelivered: 1 },
+    ],
+    status: 'InTransit',
+    note: 'Partial initial delivery',
+  },
+];
+
 async function seedData() {
   const userCount = await User.countDocuments();
   if (userCount === 0) {
@@ -98,6 +127,18 @@ async function seedData() {
   if (clientCount === 0) {
     await Client.insertMany(DEFAULT_CLIENTS);
     console.log('Default clients inserted.');
+  }
+
+  const orderCount = await Order.countDocuments();
+  if (orderCount === 0) {
+    await Order.insertMany(DEFAULT_ORDERS);
+    console.log('Default orders inserted.');
+  }
+
+  const deliveryCount = await Delivery.countDocuments();
+  if (deliveryCount === 0) {
+    await Delivery.insertMany(DEFAULT_DELIVERIES);
+    console.log('Default deliveries inserted.');
   }
 }
 

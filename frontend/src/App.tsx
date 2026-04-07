@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import {
   AlertTriangle,
@@ -74,6 +74,35 @@ type Client = {
   email: string
   phone: string
   address: string
+}
+
+type OrderItem = {
+  productId: string
+  quantity: number
+  unitPrice: number
+}
+
+type Order = {
+  id: string
+  clientId: string
+  items: OrderItem[]
+  status: 'Draft' | 'Confirmed' | 'Delivered'
+  note: string
+  totalAmount: number
+}
+
+type DeliveryItem = {
+  productId: string
+  quantityDelivered: number
+}
+
+type Delivery = {
+  id: string
+  orderId: string
+  items: DeliveryItem[]
+  status: 'InTransit' | 'Delivered'
+  note: string
+  createdAt: string
 }
 
 type ToastData = {
@@ -289,6 +318,12 @@ function AppLayout({ onLogout }: { onLogout: () => void }) {
           <NavLink to="/clients">
             <Users size={16} /> Clients
           </NavLink>
+          <NavLink to="/orders">
+            <PackagePlus size={16} /> Orders
+          </NavLink>
+          <NavLink to="/deliveries">
+            <Truck size={16} /> Deliveries
+          </NavLink>
           <NavLink to="/stock">
             <Truck size={16} /> Stock
           </NavLink>
@@ -406,6 +441,91 @@ function ProductsListPage({
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
   const [scanCode, setScanCode] = useState('')
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [scannerError, setScannerError] = useState('')
+
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const scanTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!scannerOpen) {
+      return
+    }
+
+    let isCancelled = false
+
+    const stopScanner = () => {
+      if (scanTimerRef.current !== null) {
+        window.clearInterval(scanTimerRef.current)
+        scanTimerRef.current = null
+      }
+
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop())
+        streamRef.current = null
+      }
+    }
+
+    const startScanner = async () => {
+      try {
+        setScannerError('')
+
+        const BarcodeDetectorCtor = (window as Window & { BarcodeDetector?: any }).BarcodeDetector
+        if (!BarcodeDetectorCtor) {
+          setScannerError('QR scanner is not supported by this browser. Use Chrome/Edge.')
+          return
+        }
+
+        const detector = new BarcodeDetectorCtor({ formats: ['qr_code'] })
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' },
+          audio: false,
+        })
+
+        if (isCancelled) {
+          stream.getTracks().forEach((track) => track.stop())
+          return
+        }
+
+        streamRef.current = stream
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          await videoRef.current.play()
+        }
+
+        scanTimerRef.current = window.setInterval(async () => {
+          if (!videoRef.current || videoRef.current.readyState < 2) {
+            return
+          }
+
+          try {
+            const codes = await detector.detect(videoRef.current)
+            if (codes && codes.length > 0 && codes[0]?.rawValue) {
+              const value = String(codes[0].rawValue).trim()
+              if (value) {
+                setScanCode(value)
+                setScannerOpen(false)
+              }
+            }
+          } catch {
+            // Ignore detection frame errors and keep scanning
+          }
+        }, 350)
+      } catch {
+        setScannerError('Camera access refused or unavailable.')
+      }
+    }
+
+    void startScanner()
+
+    return () => {
+      isCancelled = true
+      stopScanner()
+    }
+  }, [scannerOpen])
 
   const categories = useMemo(
     () => ['all', ...new Set(products.map((product) => product.category))],
@@ -467,6 +587,29 @@ function ProductsListPage({
           />
         </label>
       </section>
+
+      <section className="scanner-bar">
+        <button className="ghost-btn" type="button" onClick={() => setScannerOpen(true)}>
+          <QrCode size={16} /> Scan QR code
+        </button>
+      </section>
+
+      {scannerOpen ? (
+        <section className="scanner-modal" role="dialog" aria-modal="true">
+          <div className="scanner-card">
+            <div className="section-header inline small">
+              <h3>QR Scanner</h3>
+              <button className="ghost-btn" type="button" onClick={() => setScannerOpen(false)}>
+                Close
+              </button>
+            </div>
+
+            <video ref={videoRef} className="scanner-video" muted playsInline />
+            <p className="muted">Place the QR code inside camera view.</p>
+            {scannerError ? <p className="error-text">{scannerError}</p> : null}
+          </div>
+        </section>
+      ) : null}
 
       <section className="table-card">
         <table>
@@ -1111,6 +1254,622 @@ function ClientFormPage({
   )
 }
 
+function OrdersListPage({
+  orders,
+  clients,
+  onDelete,
+}: {
+  orders: Order[]
+  clients: Client[]
+  onDelete: (id: string) => Promise<void>
+}) {
+  const [search, setSearch] = useState('')
+  const clientNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    clients.forEach((client) => map.set(client.id, client.name))
+    return map
+  }, [clients])
+
+  const filtered = orders.filter((order) => {
+    const term = search.toLowerCase()
+    return (
+      order.id.toLowerCase().includes(term) ||
+      order.clientId.toLowerCase().includes(term) ||
+      (clientNameById.get(order.clientId) || '').toLowerCase().includes(term)
+    )
+  })
+
+  return (
+    <div className="page-grid">
+      <header className="section-header inline">
+        <div>
+          <h2>Orders</h2>
+          <p>Associate clients, add products and manage order lifecycle.</p>
+        </div>
+        <Link to="/orders/new" className="solid-btn">
+          <PackagePlus size={16} /> Add order
+        </Link>
+      </header>
+
+      <section className="filters-grid single">
+        <label>
+          <Search size={16} />
+          <input
+            type="text"
+            placeholder="Search order by id, client..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+      </section>
+
+      <section className="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Client</th>
+              <th>Items</th>
+              <th>Status</th>
+              <th>Total</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((order) => (
+              <tr key={order.id}>
+                <td>{order.id}</td>
+                <td>{clientNameById.get(order.clientId) || order.clientId}</td>
+                <td>{order.items.length}</td>
+                <td>{order.status}</td>
+                <td>{numberToCurrency(order.totalAmount)}</td>
+                <td className="actions-cell">
+                  <Link to={`/orders/${order.id}`}>Detail</Link>
+                  <Link to={`/orders/${order.id}/edit`}>Edit</Link>
+                  <button onClick={() => void onDelete(order.id)}>Delete</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  )
+}
+
+function OrderFormPage({
+  orders,
+  clients,
+  products,
+  onSubmit,
+}: {
+  orders: Order[]
+  clients: Client[]
+  products: Product[]
+  onSubmit: (payload: Omit<Order, 'totalAmount'>) => Promise<void>
+}) {
+  const navigate = useNavigate()
+  const { id } = useParams()
+  const order = id ? orders.find((item) => item.id === id) : undefined
+  const isEdit = Boolean(order)
+
+  const [form, setForm] = useState<Omit<Order, 'totalAmount'>>(
+    order ?? {
+      id: `CMD-${String(Math.floor(Math.random() * 900 + 100))}`,
+      clientId: clients[0]?.id || '',
+      items: products[0]
+        ? [{ productId: products[0].id, quantity: 1, unitPrice: products[0].price }]
+        : [],
+      status: 'Draft',
+      note: '',
+    },
+  )
+  const [error, setError] = useState('')
+
+  const addLine = () => {
+    if (!products[0]) {
+      return
+    }
+    setForm((prev) => ({
+      ...prev,
+      items: [...prev.items, { productId: products[0].id, quantity: 1, unitPrice: products[0].price }],
+    }))
+  }
+
+  const updateLine = (index: number, patch: Partial<OrderItem>) => {
+    setForm((prev) => ({
+      ...prev,
+      items: prev.items.map((item, idx) => (idx === index ? { ...item, ...patch } : item)),
+    }))
+  }
+
+  const removeLine = (index: number) => {
+    setForm((prev) => ({ ...prev, items: prev.items.filter((_, idx) => idx !== index) }))
+  }
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!form.id || !form.clientId || form.items.length === 0) {
+      setError('Order id, client and at least one line are required.')
+      return
+    }
+    if (form.items.some((item) => item.quantity <= 0)) {
+      setError('Line quantities must be greater than zero.')
+      return
+    }
+
+    try {
+      setError('')
+      await onSubmit(form)
+      navigate('/orders')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Cannot save order.'
+      setError(message)
+    }
+  }
+
+  return (
+    <div className="page-grid">
+      <header className="section-header">
+        <h2>{isEdit ? 'Edit Order' : 'Add Order'}</h2>
+        <p>Create order lines and assign client.</p>
+      </header>
+
+      <form className="form-card" onSubmit={handleSubmit}>
+        <div className="form-grid">
+          <label>
+            Order ID
+            <input
+              value={form.id}
+              disabled={isEdit}
+              onChange={(event) => setForm((prev) => ({ ...prev, id: event.target.value }))}
+            />
+          </label>
+          <label>
+            Client
+            <select
+              value={form.clientId}
+              onChange={(event) => setForm((prev) => ({ ...prev, clientId: event.target.value }))}
+            >
+              {clients.map((client) => (
+                <option key={client.id} value={client.id}>
+                  {client.id} - {client.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Status
+            <select
+              value={form.status}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, status: event.target.value as Order['status'] }))
+              }
+            >
+              <option value="Draft">Draft</option>
+              <option value="Confirmed">Confirmed</option>
+              <option value="Delivered">Delivered</option>
+            </select>
+          </label>
+        </div>
+
+        <section className="table-card compact">
+          <div className="section-header inline small">
+            <h3>Order lines</h3>
+            <button type="button" className="ghost-btn" onClick={addLine}>
+              Add line
+            </button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Qty</th>
+                <th>Unit price</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {form.items.map((line, index) => (
+                <tr key={`${line.productId}-${index}`}>
+                  <td>
+                    <select
+                      value={line.productId}
+                      onChange={(event) => {
+                        const selected = products.find((p) => p.id === event.target.value)
+                        updateLine(index, {
+                          productId: event.target.value,
+                          unitPrice: selected ? selected.price : line.unitPrice,
+                        })
+                      }}
+                    >
+                      {products.map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {product.id} - {product.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      min="1"
+                      value={line.quantity}
+                      onChange={(event) => updateLine(index, { quantity: Number(event.target.value) })}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      min="0"
+                      value={line.unitPrice}
+                      onChange={(event) => updateLine(index, { unitPrice: Number(event.target.value) })}
+                    />
+                  </td>
+                  <td>
+                    <button type="button" onClick={() => removeLine(index)}>
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+
+        <label>
+          Note
+          <textarea
+            rows={3}
+            value={form.note}
+            onChange={(event) => setForm((prev) => ({ ...prev, note: event.target.value }))}
+          />
+        </label>
+
+        {error ? <p className="error-text">{error}</p> : null}
+
+        <div className="action-row">
+          <button className="solid-btn" type="submit">
+            {isEdit ? 'Save changes' : 'Create order'}
+          </button>
+          <button className="ghost-btn" type="button" onClick={() => navigate('/orders')}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function OrderDetailPage({
+  orders,
+  clients,
+  products,
+  deliveries,
+}: {
+  orders: Order[]
+  clients: Client[]
+  products: Product[]
+  deliveries: Delivery[]
+}) {
+  const { id } = useParams()
+  const order = orders.find((item) => item.id === id)
+  const clientNameById = useMemo(() => new Map(clients.map((c) => [c.id, c.name])), [clients])
+  const productNameById = useMemo(() => new Map(products.map((p) => [p.id, p.name])), [products])
+  const relatedDeliveries = deliveries.filter((delivery) => delivery.orderId === id)
+
+  if (!order) {
+    return (
+      <div className="panel-card">
+        <h3>Order not found</h3>
+        <Link to="/orders">Back to orders</Link>
+      </div>
+    )
+  }
+
+  return (
+    <div className="page-grid">
+      <header className="section-header inline">
+        <div>
+          <h2>Order detail</h2>
+          <p>{order.id}</p>
+        </div>
+        <Link className="solid-btn" to={`/orders/${order.id}/edit`}>
+          Edit order
+        </Link>
+      </header>
+
+      <article className="panel-card">
+        <p>
+          <strong>Client:</strong> {clientNameById.get(order.clientId) || order.clientId}
+        </p>
+        <p>
+          <strong>Status:</strong> {order.status}
+        </p>
+        <p>
+          <strong>Total:</strong> {numberToCurrency(order.totalAmount)}
+        </p>
+      </article>
+
+      <section className="table-card">
+        <h3>Ordered items</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Qty</th>
+              <th>Unit price</th>
+              <th>Line total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {order.items.map((item, index) => (
+              <tr key={`${item.productId}-${index}`}>
+                <td>{productNameById.get(item.productId) || item.productId}</td>
+                <td>{item.quantity}</td>
+                <td>{numberToCurrency(item.unitPrice)}</td>
+                <td>{numberToCurrency(item.quantity * item.unitPrice)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="table-card">
+        <h3>Delivery history</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Delivery ID</th>
+              <th>Status</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {relatedDeliveries.map((delivery) => (
+              <tr key={delivery.id}>
+                <td>{delivery.id}</td>
+                <td>{delivery.status}</td>
+                <td>{new Date(delivery.createdAt).toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  )
+}
+
+function DeliveriesListPage({
+  deliveries,
+  orders,
+}: {
+  deliveries: Delivery[]
+  orders: Order[]
+}) {
+  const [search, setSearch] = useState('')
+  const orderIdSet = useMemo(() => new Set(orders.map((order) => order.id)), [orders])
+
+  const filtered = deliveries.filter((delivery) => {
+    const term = search.toLowerCase()
+    return (
+      delivery.id.toLowerCase().includes(term) ||
+      delivery.orderId.toLowerCase().includes(term) ||
+      delivery.status.toLowerCase().includes(term)
+    )
+  })
+
+  return (
+    <div className="page-grid">
+      <header className="section-header inline">
+        <div>
+          <h2>Deliveries</h2>
+          <p>Create delivery note and track delivery history.</p>
+        </div>
+        <Link to="/deliveries/new" className="solid-btn">
+          <PackagePlus size={16} /> Create delivery note
+        </Link>
+      </header>
+
+      <section className="filters-grid single">
+        <label>
+          <Search size={16} />
+          <input
+            type="text"
+            placeholder="Search delivery by id/order/status..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+      </section>
+
+      <section className="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Order</th>
+              <th>Status</th>
+              <th>Items</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((delivery) => (
+              <tr key={delivery.id}>
+                <td>{delivery.id}</td>
+                <td>{orderIdSet.has(delivery.orderId) ? delivery.orderId : `${delivery.orderId} (missing)`}</td>
+                <td>{delivery.status}</td>
+                <td>{delivery.items.length}</td>
+                <td>{new Date(delivery.createdAt).toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  )
+}
+
+function DeliveryFormPage({
+  orders,
+  products,
+  onSubmit,
+}: {
+  orders: Order[]
+  products: Product[]
+  onSubmit: (payload: Omit<Delivery, 'createdAt'>) => Promise<void>
+}) {
+  const navigate = useNavigate()
+  const [form, setForm] = useState<Omit<Delivery, 'createdAt'>>({
+    id: `BL-${String(Math.floor(Math.random() * 900 + 100))}`,
+    orderId: orders[0]?.id || '',
+    items: [],
+    status: 'InTransit',
+    note: '',
+  })
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const order = orders.find((item) => item.id === form.orderId)
+    if (!order) {
+      return
+    }
+    setForm((prev) => ({
+      ...prev,
+      items:
+        prev.items.length > 0
+          ? prev.items
+          : order.items.map((item) => ({ productId: item.productId, quantityDelivered: 1 })),
+    }))
+  }, [form.orderId, orders])
+
+  const updateItemQty = (productId: string, qty: number) => {
+    setForm((prev) => ({
+      ...prev,
+      items: prev.items.map((item) =>
+        item.productId === productId ? { ...item, quantityDelivered: qty } : item,
+      ),
+    }))
+  }
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!form.id || !form.orderId || form.items.length === 0) {
+      setError('Delivery id, order and at least one line are required.')
+      return
+    }
+    if (form.items.some((item) => item.quantityDelivered <= 0)) {
+      setError('Delivered quantity must be greater than zero.')
+      return
+    }
+
+    try {
+      setError('')
+      await onSubmit(form)
+      navigate('/deliveries')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Cannot create delivery.'
+      setError(message)
+    }
+  }
+
+  const productById = useMemo(() => new Map(products.map((p) => [p.id, p.name])), [products])
+
+  return (
+    <div className="page-grid">
+      <header className="section-header">
+        <h2>Create delivery note</h2>
+        <p>Create and register delivered quantities.</p>
+      </header>
+
+      <form className="form-card" onSubmit={handleSubmit}>
+        <div className="form-grid">
+          <label>
+            Delivery ID
+            <input
+              value={form.id}
+              onChange={(event) => setForm((prev) => ({ ...prev, id: event.target.value }))}
+            />
+          </label>
+          <label>
+            Order
+            <select
+              value={form.orderId}
+              onChange={(event) => setForm((prev) => ({ ...prev, orderId: event.target.value, items: [] }))}
+            >
+              {orders.map((order) => (
+                <option key={order.id} value={order.id}>
+                  {order.id} - {order.status}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Status
+            <select
+              value={form.status}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, status: event.target.value as Delivery['status'] }))
+              }
+            >
+              <option value="InTransit">InTransit</option>
+              <option value="Delivered">Delivered</option>
+            </select>
+          </label>
+        </div>
+
+        <section className="table-card compact">
+          <h3>Delivered quantities</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Delivered Qty</th>
+              </tr>
+            </thead>
+            <tbody>
+              {form.items.map((item) => (
+                <tr key={item.productId}>
+                  <td>{productById.get(item.productId) || item.productId}</td>
+                  <td>
+                    <input
+                      type="number"
+                      min="1"
+                      value={item.quantityDelivered}
+                      onChange={(event) => updateItemQty(item.productId, Number(event.target.value))}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+
+        <label>
+          Note
+          <textarea
+            rows={3}
+            value={form.note}
+            onChange={(event) => setForm((prev) => ({ ...prev, note: event.target.value }))}
+          />
+        </label>
+
+        {error ? <p className="error-text">{error}</p> : null}
+
+        <div className="action-row">
+          <button className="solid-btn" type="submit">
+            Create delivery
+          </button>
+          <button className="ghost-btn" type="button" onClick={() => navigate('/deliveries')}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
 function StockPage({
   products,
   movements,
@@ -1344,7 +2103,9 @@ function App() {
   const [movements, setMovements] = useState<StockMovement[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [clients, setClients] = useState<Client[]>([])
-  const [orders, setOrders] = useState<DashboardOrder[]>(INITIAL_ORDERS)
+  const [orders, setOrders] = useState<Order[]>([])
+  const [deliveries, setDeliveries] = useState<Delivery[]>([])
+  const [dashboardOrders, setDashboardOrders] = useState<DashboardOrder[]>(INITIAL_ORDERS)
   const [monthlyFlows, setMonthlyFlows] = useState<Array<{ month: string; value: number }>>(
     INITIAL_MONTHLY_FLOWS,
   )
@@ -1387,13 +2148,15 @@ function App() {
   })
 
   const loadData = async (authToken: string) => {
-    const [productsData, movementsData, dashboardData, suppliersData, clientsData] =
+    const [productsData, movementsData, dashboardData, suppliersData, clientsData, ordersData, deliveriesData] =
       await Promise.all([
         api.getProducts(authToken),
         api.getMovements(authToken, 100),
         api.getDashboard(authToken),
         api.getSuppliers(authToken),
         api.getClients(authToken),
+        api.getOrders(authToken),
+        api.getDeliveries(authToken),
       ])
 
     setProducts(
@@ -1409,7 +2172,7 @@ function App() {
       })),
     )
     setMovements(movementsData.map(mapMovement))
-    setOrders(dashboardData.recentOrders)
+    setDashboardOrders(dashboardData.recentOrders)
     setMonthlyFlows(dashboardData.monthlyFlows)
     setSuppliers(
       suppliersData.map((supplier) => ({
@@ -1428,6 +2191,33 @@ function App() {
         email: client.email || '',
         phone: client.phone || '',
         address: client.address || '',
+      })),
+    )
+    setOrders(
+      ordersData.map((order) => ({
+        id: order.id,
+        clientId: order.clientId,
+        items: order.items.map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+        })),
+        status: order.status,
+        note: order.note || '',
+        totalAmount: order.totalAmount,
+      })),
+    )
+    setDeliveries(
+      deliveriesData.map((delivery) => ({
+        id: delivery.id,
+        orderId: delivery.orderId,
+        items: delivery.items.map((item) => ({
+          productId: item.productId,
+          quantityDelivered: item.quantityDelivered,
+        })),
+        status: delivery.status,
+        note: delivery.note || '',
+        createdAt: delivery.createdAt,
       })),
     )
   }
@@ -1464,6 +2254,8 @@ function App() {
     setSuppliers([])
     setClients([])
     setOrders([])
+    setDeliveries([])
+    setDashboardOrders([])
     setMonthlyFlows([])
     showSuccess('Session closed.')
   }
@@ -1621,6 +2413,61 @@ function App() {
     }
   }
 
+  const upsertOrder = async (payload: Omit<Order, 'totalAmount'>) => {
+    if (!token) {
+      throw new Error('Unauthorized')
+    }
+
+    const exists = orders.some((item) => item.id === payload.id)
+
+    try {
+      if (exists) {
+        await api.updateOrder(token, payload.id, payload)
+      } else {
+        await api.createOrder(token, payload)
+      }
+
+      await loadData(token)
+      showSuccess(exists ? 'Order updated successfully.' : 'Order added successfully.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Cannot save order.'
+      showError(message)
+      throw err
+    }
+  }
+
+  const deleteOrder = async (id: string) => {
+    if (!token) {
+      throw new Error('Unauthorized')
+    }
+
+    try {
+      await api.deleteOrder(token, id)
+      await loadData(token)
+      showSuccess('Order deleted successfully.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Cannot delete order.'
+      showError(message)
+      throw err
+    }
+  }
+
+  const addDelivery = async (payload: Omit<Delivery, 'createdAt'>) => {
+    if (!token) {
+      throw new Error('Unauthorized')
+    }
+
+    try {
+      await api.createDelivery(token, payload)
+      await loadData(token)
+      showSuccess('Delivery created successfully.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Cannot create delivery.'
+      showError(message)
+      throw err
+    }
+  }
+
   return (
     <BrowserRouter>
       <Routes>
@@ -1645,7 +2492,7 @@ function App() {
               <DashboardPage
                 products={products}
                 movements={movements}
-                orders={orders}
+                orders={dashboardOrders}
                 monthlyFlows={monthlyFlows}
               />
             }
@@ -1674,6 +2521,29 @@ function App() {
           <Route path="/clients" element={<ClientsListPage clients={clients} onDelete={deleteClient} />} />
           <Route path="/clients/new" element={<ClientFormPage clients={clients} onSubmit={upsertClient} />} />
           <Route path="/clients/:id/edit" element={<ClientFormPage clients={clients} onSubmit={upsertClient} />} />
+
+          <Route
+            path="/orders"
+            element={<OrdersListPage orders={orders} clients={clients} onDelete={deleteOrder} />}
+          />
+          <Route
+            path="/orders/new"
+            element={<OrderFormPage orders={orders} clients={clients} products={products} onSubmit={upsertOrder} />}
+          />
+          <Route
+            path="/orders/:id/edit"
+            element={<OrderFormPage orders={orders} clients={clients} products={products} onSubmit={upsertOrder} />}
+          />
+          <Route
+            path="/orders/:id"
+            element={<OrderDetailPage orders={orders} clients={clients} products={products} deliveries={deliveries} />}
+          />
+
+          <Route path="/deliveries" element={<DeliveriesListPage deliveries={deliveries} orders={orders} />} />
+          <Route
+            path="/deliveries/new"
+            element={<DeliveryFormPage orders={orders} products={products} onSubmit={addDelivery} />}
+          />
 
           <Route
             path="/stock"

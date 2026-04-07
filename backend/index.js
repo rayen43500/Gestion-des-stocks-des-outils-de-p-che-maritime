@@ -8,6 +8,8 @@ const seedData = require('./src/utils/seed');
 const authRoutes = require('./src/routes/auth.routes');
 const clientsRoutes = require('./src/routes/clients.routes');
 const dashboardRoutes = require('./src/routes/dashboard.routes');
+const deliveriesRoutes = require('./src/routes/deliveries.routes');
+const ordersRoutes = require('./src/routes/orders.routes');
 const productRoutes = require('./src/routes/products.routes');
 const suppliersRoutes = require('./src/routes/suppliers.routes');
 const stockRoutes = require('./src/routes/stock.routes');
@@ -31,6 +33,8 @@ app.use('/api/dashboard', authMiddleware, dashboardRoutes);
 app.use('/api/products', authMiddleware, productRoutes);
 app.use('/api/suppliers', authMiddleware, suppliersRoutes);
 app.use('/api/clients', authMiddleware, clientsRoutes);
+app.use('/api/orders', authMiddleware, ordersRoutes);
+app.use('/api/deliveries', authMiddleware, deliveriesRoutes);
 app.use('/api/stock', authMiddleware, stockRoutes);
 
 app.use((req, res) => {
