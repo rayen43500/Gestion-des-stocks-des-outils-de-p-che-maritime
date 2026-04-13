@@ -4,8 +4,11 @@ import {
   AlertTriangle,
   ArrowDownCircle,
   ArrowUpCircle,
+  BarChart3,
   Boxes,
   Building2,
+  CreditCard,
+  FileText,
   Fish,
   LayoutDashboard,
   LogIn,
@@ -13,6 +16,7 @@ import {
   PackagePlus,
   QrCode,
   Search,
+  Settings,
   Truck,
   Users,
 } from 'lucide-react'
@@ -103,6 +107,34 @@ type Delivery = {
   status: 'InTransit' | 'Delivered'
   note: string
   createdAt: string
+}
+
+type Invoice = {
+  id: string
+  orderId: string
+  clientId: string
+  totalAmount: number
+  paidAmount: number
+  status: 'Unpaid' | 'Partial' | 'Paid'
+  note: string
+}
+
+type Payment = {
+  id: string
+  invoiceId: string
+  amount: number
+  method: string
+  note: string
+  paidAt: string
+}
+
+type StatisticsData = {
+  totalSales: number
+  totalStock: number
+  totalOrders: number
+  totalProducts: number
+  popularProducts: Array<{ productId: string; name: string; soldQty: number }>
+  salesByStatus: Array<{ key: 'Draft' | 'Confirmed' | 'Delivered'; value: number }>
 }
 
 type ToastData = {
@@ -323,6 +355,18 @@ function AppLayout({ onLogout }: { onLogout: () => void }) {
           </NavLink>
           <NavLink to="/deliveries">
             <Truck size={16} /> Deliveries
+          </NavLink>
+          <NavLink to="/invoices">
+            <FileText size={16} /> Invoices
+          </NavLink>
+          <NavLink to="/payments">
+            <CreditCard size={16} /> Payments
+          </NavLink>
+          <NavLink to="/statistics">
+            <BarChart3 size={16} /> Statistics
+          </NavLink>
+          <NavLink to="/settings">
+            <Settings size={16} /> Settings
           </NavLink>
           <NavLink to="/stock">
             <Truck size={16} /> Stock
@@ -1870,6 +1914,369 @@ function DeliveryFormPage({
   )
 }
 
+function InvoicesListPage({
+  invoices,
+  orders,
+  clients,
+  onGenerate,
+  onExportXml,
+}: {
+  invoices: Invoice[]
+  orders: Order[]
+  clients: Client[]
+  onGenerate: (payload: { id: string; orderId: string; note: string }) => Promise<void>
+  onExportXml: (invoiceId: string) => Promise<void>
+}) {
+  const [search, setSearch] = useState('')
+  const [newInvoiceId, setNewInvoiceId] = useState(`FAC-${String(Math.floor(Math.random() * 900 + 100))}`)
+  const [orderId, setOrderId] = useState(orders[0]?.id || '')
+  const [note, setNote] = useState('')
+
+  const orderMap = useMemo(() => new Map(orders.map((order) => [order.id, order])), [orders])
+  const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client.name])), [clients])
+
+  const filtered = invoices.filter((invoice) => {
+    const term = search.toLowerCase()
+    return (
+      invoice.id.toLowerCase().includes(term) ||
+      invoice.orderId.toLowerCase().includes(term) ||
+      invoice.clientId.toLowerCase().includes(term) ||
+      invoice.status.toLowerCase().includes(term)
+    )
+  })
+
+  const handleGenerate = async () => {
+    await onGenerate({ id: newInvoiceId, orderId, note })
+    setNewInvoiceId(`FAC-${String(Math.floor(Math.random() * 900 + 100))}`)
+    setNote('')
+  }
+
+  return (
+    <div className="page-grid">
+      <header className="section-header">
+        <h2>Invoices</h2>
+        <p>Generate invoices from orders, export XML and print.</p>
+      </header>
+
+      <section className="form-card">
+        <div className="form-grid">
+          <label>
+            Invoice ID
+            <input value={newInvoiceId} onChange={(event) => setNewInvoiceId(event.target.value)} />
+          </label>
+          <label>
+            Order
+            <select value={orderId} onChange={(event) => setOrderId(event.target.value)}>
+              {orders.map((order) => (
+                <option key={order.id} value={order.id}>
+                  {order.id} - {clientMap.get(order.clientId) || order.clientId}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <label>
+          Note
+          <input value={note} onChange={(event) => setNote(event.target.value)} />
+        </label>
+        <div className="action-row">
+          <button className="solid-btn" type="button" onClick={() => void handleGenerate()}>
+            Generate invoice
+          </button>
+        </div>
+      </section>
+
+      <section className="filters-grid single">
+        <label>
+          <Search size={16} />
+          <input
+            type="text"
+            placeholder="Search invoice by id/order/client/status..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+      </section>
+
+      <section className="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Order</th>
+              <th>Client</th>
+              <th>Total</th>
+              <th>Paid</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((invoice) => (
+              <tr key={invoice.id}>
+                <td>{invoice.id}</td>
+                <td>{invoice.orderId}</td>
+                <td>{clientMap.get(invoice.clientId) || invoice.clientId}</td>
+                <td>{numberToCurrency(invoice.totalAmount)}</td>
+                <td>{numberToCurrency(invoice.paidAmount)}</td>
+                <td>{invoice.status}</td>
+                <td className="actions-cell">
+                  <button type="button" onClick={() => void onExportXml(invoice.id)}>
+                    XML
+                  </button>
+                  <button type="button" onClick={() => window.print()}>
+                    Print/PDF
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  )
+}
+
+function PaymentsPage({
+  payments,
+  invoices,
+  onAdd,
+}: {
+  payments: Payment[]
+  invoices: Invoice[]
+  onAdd: (payload: { id: string; invoiceId: string; amount: number; method: string; note: string }) => Promise<void>
+}) {
+  const [search, setSearch] = useState('')
+  const [id, setId] = useState(`PAY-${String(Math.floor(Math.random() * 900 + 100))}`)
+  const [invoiceId, setInvoiceId] = useState(invoices[0]?.id || '')
+  const [amount, setAmount] = useState(0)
+  const [method, setMethod] = useState('cash')
+  const [note, setNote] = useState('')
+
+  const filtered = payments.filter((payment) => {
+    const term = search.toLowerCase()
+    return (
+      payment.id.toLowerCase().includes(term) ||
+      payment.invoiceId.toLowerCase().includes(term) ||
+      payment.method.toLowerCase().includes(term)
+    )
+  })
+
+  const handleAdd = async () => {
+    await onAdd({ id, invoiceId, amount, method, note })
+    setId(`PAY-${String(Math.floor(Math.random() * 900 + 100))}`)
+    setAmount(0)
+    setNote('')
+  }
+
+  return (
+    <div className="page-grid">
+      <header className="section-header">
+        <h2>Payments</h2>
+        <p>Register payment methods, link to invoices and keep history.</p>
+      </header>
+
+      <section className="form-card">
+        <div className="form-grid">
+          <label>
+            Payment ID
+            <input value={id} onChange={(event) => setId(event.target.value)} />
+          </label>
+          <label>
+            Invoice
+            <select value={invoiceId} onChange={(event) => setInvoiceId(event.target.value)}>
+              {invoices.map((invoice) => (
+                <option key={invoice.id} value={invoice.id}>
+                  {invoice.id} - {invoice.status}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Amount
+            <input type="number" min="0" value={amount} onChange={(event) => setAmount(Number(event.target.value))} />
+          </label>
+          <label>
+            Method
+            <select value={method} onChange={(event) => setMethod(event.target.value)}>
+              <option value="cash">Cash</option>
+              <option value="cheque">Cheque</option>
+              <option value="transfer">Transfer</option>
+            </select>
+          </label>
+        </div>
+        <label>
+          Note
+          <input value={note} onChange={(event) => setNote(event.target.value)} />
+        </label>
+        <div className="action-row">
+          <button className="solid-btn" type="button" onClick={() => void handleAdd()}>
+            Add payment
+          </button>
+        </div>
+      </section>
+
+      <section className="filters-grid single">
+        <label>
+          <Search size={16} />
+          <input
+            type="text"
+            placeholder="Search payment by id/invoice/method..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+      </section>
+
+      <section className="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Invoice</th>
+              <th>Amount</th>
+              <th>Method</th>
+              <th>Date</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((payment) => (
+              <tr key={payment.id}>
+                <td>{payment.id}</td>
+                <td>{payment.invoiceId}</td>
+                <td>{numberToCurrency(payment.amount)}</td>
+                <td>{payment.method}</td>
+                <td>{new Date(payment.paidAt).toLocaleString()}</td>
+                <td>{payment.note || '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  )
+}
+
+function StatisticsPage({
+  statistics,
+}: {
+  statistics: StatisticsData
+}) {
+  const maxPopular = Math.max(1, ...statistics.popularProducts.map((item) => item.soldQty))
+
+  return (
+    <div className="page-grid">
+      <header className="section-header">
+        <h2>Statistics</h2>
+        <p>Sales, stock and product popularity analytics.</p>
+      </header>
+
+      <section className="kpi-grid">
+        <article className="kpi-card">
+          <span>Total sales</span>
+          <strong>{numberToCurrency(statistics.totalSales)}</strong>
+        </article>
+        <article className="kpi-card">
+          <span>Total stock</span>
+          <strong>{statistics.totalStock}</strong>
+        </article>
+        <article className="kpi-card">
+          <span>Total orders</span>
+          <strong>{statistics.totalOrders}</strong>
+        </article>
+      </section>
+
+      <section className="table-card">
+        <h3>Popular products</h3>
+        <div className="bar-chart" role="img" aria-label="Popular products chart">
+          {statistics.popularProducts.map((item) => (
+            <div key={item.productId} className="bar-col">
+              <div className="bar" style={{ height: `${Math.max(8, (item.soldQty / maxPopular) * 100)}%` }} />
+              <span>{item.name}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function SettingsPage({
+  profile,
+  onSaveProfile,
+  onChangePassword,
+}: {
+  profile: { name: string; email: string }
+  onSaveProfile: (payload: { name: string; email: string }) => Promise<void>
+  onChangePassword: (payload: { currentPassword: string; newPassword: string }) => Promise<void>
+}) {
+  const [name, setName] = useState(profile.name)
+  const [email, setEmail] = useState(profile.email)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+
+  useEffect(() => {
+    setName(profile.name)
+    setEmail(profile.email)
+  }, [profile])
+
+  return (
+    <div className="page-grid">
+      <header className="section-header">
+        <h2>Settings</h2>
+        <p>Update profile information and change password.</p>
+      </header>
+
+      <section className="form-card">
+        <h3>Profile</h3>
+        <div className="form-grid">
+          <label>
+            Name
+            <input value={name} onChange={(event) => setName(event.target.value)} />
+          </label>
+          <label>
+            Email
+            <input value={email} onChange={(event) => setEmail(event.target.value)} />
+          </label>
+        </div>
+        <div className="action-row">
+          <button className="solid-btn" type="button" onClick={() => void onSaveProfile({ name, email })}>
+            Save profile
+          </button>
+        </div>
+      </section>
+
+      <section className="form-card">
+        <h3>Password</h3>
+        <div className="form-grid">
+          <label>
+            Current password
+            <input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
+          </label>
+          <label>
+            New password
+            <input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+          </label>
+        </div>
+        <div className="action-row">
+          <button
+            className="solid-btn"
+            type="button"
+            onClick={async () => {
+              await onChangePassword({ currentPassword, newPassword })
+              setCurrentPassword('')
+              setNewPassword('')
+            }}
+          >
+            Change password
+          </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function StockPage({
   products,
   movements,
@@ -2105,6 +2512,17 @@ function App() {
   const [clients, setClients] = useState<Client[]>([])
   const [orders, setOrders] = useState<Order[]>([])
   const [deliveries, setDeliveries] = useState<Delivery[]>([])
+  const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [payments, setPayments] = useState<Payment[]>([])
+  const [statistics, setStatistics] = useState<StatisticsData>({
+    totalSales: 0,
+    totalStock: 0,
+    totalOrders: 0,
+    totalProducts: 0,
+    popularProducts: [],
+    salesByStatus: [],
+  })
+  const [profile, setProfile] = useState<{ name: string; email: string }>({ name: '', email: '' })
   const [dashboardOrders, setDashboardOrders] = useState<DashboardOrder[]>(INITIAL_ORDERS)
   const [monthlyFlows, setMonthlyFlows] = useState<Array<{ month: string; value: number }>>(
     INITIAL_MONTHLY_FLOWS,
@@ -2148,7 +2566,19 @@ function App() {
   })
 
   const loadData = async (authToken: string) => {
-    const [productsData, movementsData, dashboardData, suppliersData, clientsData, ordersData, deliveriesData] =
+    const [
+      productsData,
+      movementsData,
+      dashboardData,
+      suppliersData,
+      clientsData,
+      ordersData,
+      deliveriesData,
+      invoicesData,
+      paymentsData,
+      statisticsData,
+      profileData,
+    ] =
       await Promise.all([
         api.getProducts(authToken),
         api.getMovements(authToken, 100),
@@ -2157,6 +2587,10 @@ function App() {
         api.getClients(authToken),
         api.getOrders(authToken),
         api.getDeliveries(authToken),
+        api.getInvoices(authToken),
+        api.getPayments(authToken),
+        api.getStatistics(authToken),
+        api.getProfile(authToken),
       ])
 
     setProducts(
@@ -2220,6 +2654,29 @@ function App() {
         createdAt: delivery.createdAt,
       })),
     )
+    setInvoices(
+      invoicesData.map((invoice) => ({
+        id: invoice.id,
+        orderId: invoice.orderId,
+        clientId: invoice.clientId,
+        totalAmount: invoice.totalAmount,
+        paidAmount: invoice.paidAmount,
+        status: invoice.status,
+        note: invoice.note || '',
+      })),
+    )
+    setPayments(
+      paymentsData.map((payment) => ({
+        id: payment.id,
+        invoiceId: payment.invoiceId,
+        amount: payment.amount,
+        method: payment.method,
+        note: payment.note || '',
+        paidAt: payment.paidAt,
+      })),
+    )
+    setStatistics(statisticsData)
+    setProfile(profileData)
   }
 
   useEffect(() => {
@@ -2255,8 +2712,19 @@ function App() {
     setClients([])
     setOrders([])
     setDeliveries([])
+    setInvoices([])
+    setPayments([])
     setDashboardOrders([])
     setMonthlyFlows([])
+    setStatistics({
+      totalSales: 0,
+      totalStock: 0,
+      totalOrders: 0,
+      totalProducts: 0,
+      popularProducts: [],
+      salesByStatus: [],
+    })
+    setProfile({ name: '', email: '' })
     showSuccess('Session closed.')
   }
 
@@ -2468,6 +2936,99 @@ function App() {
     }
   }
 
+  const generateInvoice = async (payload: { id: string; orderId: string; note: string }) => {
+    if (!token) {
+      throw new Error('Unauthorized')
+    }
+
+    try {
+      await api.generateInvoice(token, payload)
+      await loadData(token)
+      showSuccess('Invoice generated successfully.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Cannot generate invoice.'
+      showError(message)
+      throw err
+    }
+  }
+
+  const exportInvoiceXml = async (invoiceId: string) => {
+    if (!token) {
+      throw new Error('Unauthorized')
+    }
+
+    try {
+      const xml = await api.exportInvoiceXml(token, invoiceId)
+      const blob = new Blob([xml], { type: 'application/xml' })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `${invoiceId}.xml`
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(url)
+      showSuccess('Invoice XML exported.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Cannot export XML.'
+      showError(message)
+      throw err
+    }
+  }
+
+  const addPayment = async (payload: {
+    id: string
+    invoiceId: string
+    amount: number
+    method: string
+    note: string
+  }) => {
+    if (!token) {
+      throw new Error('Unauthorized')
+    }
+
+    try {
+      await api.createPayment(token, payload)
+      await loadData(token)
+      showSuccess('Payment added successfully.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Cannot add payment.'
+      showError(message)
+      throw err
+    }
+  }
+
+  const saveProfile = async (payload: { name: string; email: string }) => {
+    if (!token) {
+      throw new Error('Unauthorized')
+    }
+
+    try {
+      await api.updateProfile(token, payload)
+      await loadData(token)
+      showSuccess('Profile updated successfully.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Cannot update profile.'
+      showError(message)
+      throw err
+    }
+  }
+
+  const changePassword = async (payload: { currentPassword: string; newPassword: string }) => {
+    if (!token) {
+      throw new Error('Unauthorized')
+    }
+
+    try {
+      await api.updatePassword(token, payload)
+      showSuccess('Password changed successfully.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Cannot change password.'
+      showError(message)
+      throw err
+    }
+  }
+
   return (
     <BrowserRouter>
       <Routes>
@@ -2543,6 +3104,31 @@ function App() {
           <Route
             path="/deliveries/new"
             element={<DeliveryFormPage orders={orders} products={products} onSubmit={addDelivery} />}
+          />
+
+          <Route
+            path="/invoices"
+            element={
+              <InvoicesListPage
+                invoices={invoices}
+                orders={orders}
+                clients={clients}
+                onGenerate={generateInvoice}
+                onExportXml={exportInvoiceXml}
+              />
+            }
+          />
+
+          <Route
+            path="/payments"
+            element={<PaymentsPage payments={payments} invoices={invoices} onAdd={addPayment} />}
+          />
+
+          <Route path="/statistics" element={<StatisticsPage statistics={statistics} />} />
+
+          <Route
+            path="/settings"
+            element={<SettingsPage profile={profile} onSaveProfile={saveProfile} onChangePassword={changePassword} />}
           />
 
           <Route

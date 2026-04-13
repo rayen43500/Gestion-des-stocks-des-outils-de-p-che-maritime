@@ -303,6 +303,12 @@
   align-items: center;
 }
 
+.section-header.inline.small {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
 .section-header h2,
 .section-header p {
   margin: 0;
@@ -344,6 +350,10 @@
   border: 1px solid var(--border-soft);
   background: var(--panel);
   padding: 1rem;
+}
+
+.table-card.compact {
+  padding: 0.8rem;
 }
 
 .bar-chart {

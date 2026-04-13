@@ -9,8 +9,12 @@ const authRoutes = require('./src/routes/auth.routes');
 const clientsRoutes = require('./src/routes/clients.routes');
 const dashboardRoutes = require('./src/routes/dashboard.routes');
 const deliveriesRoutes = require('./src/routes/deliveries.routes');
+const invoicesRoutes = require('./src/routes/invoices.routes');
 const ordersRoutes = require('./src/routes/orders.routes');
+const paymentsRoutes = require('./src/routes/payments.routes');
 const productRoutes = require('./src/routes/products.routes');
+const settingsRoutes = require('./src/routes/settings.routes');
+const statisticsRoutes = require('./src/routes/statistics.routes');
 const suppliersRoutes = require('./src/routes/suppliers.routes');
 const stockRoutes = require('./src/routes/stock.routes');
 
@@ -35,6 +39,10 @@ app.use('/api/suppliers', authMiddleware, suppliersRoutes);
 app.use('/api/clients', authMiddleware, clientsRoutes);
 app.use('/api/orders', authMiddleware, ordersRoutes);
 app.use('/api/deliveries', authMiddleware, deliveriesRoutes);
+app.use('/api/invoices', authMiddleware, invoicesRoutes);
+app.use('/api/payments', authMiddleware, paymentsRoutes);
+app.use('/api/statistics', authMiddleware, statisticsRoutes);
+app.use('/api/settings', authMiddleware, settingsRoutes);
 app.use('/api/stock', authMiddleware, stockRoutes);
 
 app.use((req, res) => {

@@ -1,7 +1,9 @@
 const bcrypt = require('bcryptjs');
 const Client = require('../models/Client');
 const Delivery = require('../models/Delivery');
+const Invoice = require('../models/Invoice');
 const Order = require('../models/Order');
+const Payment = require('../models/Payment');
 const Product = require('../models/Product');
 const Supplier = require('../models/Supplier');
 const User = require('../models/User');
@@ -99,6 +101,28 @@ const DEFAULT_DELIVERIES = [
   },
 ];
 
+const DEFAULT_INVOICES = [
+  {
+    id: 'FAC-700',
+    orderId: 'CMD-500',
+    clientId: 'C-001',
+    totalAmount: 1120,
+    paidAmount: 350,
+    status: 'Partial',
+    note: 'Initial seeded invoice',
+  },
+];
+
+const DEFAULT_PAYMENTS = [
+  {
+    id: 'PAY-900',
+    invoiceId: 'FAC-700',
+    amount: 350,
+    method: 'cash',
+    note: 'Initial payment',
+  },
+];
+
 async function seedData() {
   const userCount = await User.countDocuments();
   if (userCount === 0) {
@@ -139,6 +163,18 @@ async function seedData() {
   if (deliveryCount === 0) {
     await Delivery.insertMany(DEFAULT_DELIVERIES);
     console.log('Default deliveries inserted.');
+  }
+
+  const invoiceCount = await Invoice.countDocuments();
+  if (invoiceCount === 0) {
+    await Invoice.insertMany(DEFAULT_INVOICES);
+    console.log('Default invoices inserted.');
+  }
+
+  const paymentCount = await Payment.countDocuments();
+  if (paymentCount === 0) {
+    await Payment.insertMany(DEFAULT_PAYMENTS);
+    console.log('Default payments inserted.');
   }
 }
 

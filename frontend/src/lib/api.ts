@@ -75,6 +75,40 @@ export type DeliveryDto = {
   updatedAt: string
 }
 
+export type InvoiceDto = {
+  _id: string
+  id: string
+  orderId: string
+  clientId: string
+  totalAmount: number
+  paidAmount: number
+  status: 'Unpaid' | 'Partial' | 'Paid'
+  note: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type PaymentDto = {
+  _id: string
+  id: string
+  invoiceId: string
+  amount: number
+  method: string
+  note: string
+  paidAt: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type StatisticsDto = {
+  totalSales: number
+  totalStock: number
+  totalOrders: number
+  totalProducts: number
+  popularProducts: Array<{ productId: string; name: string; soldQty: number }>
+  salesByStatus: Array<{ key: 'Draft' | 'Confirmed' | 'Delivered'; value: number }>
+}
+
 type RequestOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   token?: string | null
@@ -309,4 +343,79 @@ export async function createDelivery(
   },
 ) {
   return request('/deliveries', { method: 'POST', token, body: payload })
+}
+
+export async function getInvoices(token: string, search = '') {
+  const query = search ? `?search=${encodeURIComponent(search)}` : ''
+  return request<InvoiceDto[]>(`/invoices${query}`, { token })
+}
+
+export async function getInvoiceDetail(token: string, id: string) {
+  return request<{ invoice: InvoiceDto; order: OrderDto; payments: PaymentDto[] }>(`/invoices/${id}`, {
+    token,
+  })
+}
+
+export async function generateInvoice(
+  token: string,
+  payload: { id: string; orderId: string; note: string },
+) {
+  return request('/invoices', { method: 'POST', token, body: payload })
+}
+
+export async function exportInvoiceXml(token: string, id: string) {
+  const response = await fetch(`${API_BASE}/invoices/${id}/xml`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}))
+    throw new Error(payload.message || 'XML export failed')
+  }
+
+  return response.text()
+}
+
+export async function getPayments(token: string, search = '') {
+  const query = search ? `?search=${encodeURIComponent(search)}` : ''
+  return request<PaymentDto[]>(`/payments${query}`, { token })
+}
+
+export async function createPayment(
+  token: string,
+  payload: { id: string; invoiceId: string; amount: number; method: string; note: string },
+) {
+  return request('/payments', { method: 'POST', token, body: payload })
+}
+
+export async function getStatistics(token: string) {
+  return request<StatisticsDto>('/statistics', { token })
+}
+
+export async function getProfile(token: string) {
+  return request<{ email: string; name: string }>('/settings/profile', { token })
+}
+
+export async function updateProfile(
+  token: string,
+  payload: { name: string; email: string },
+) {
+  return request<{ email: string; name: string }>('/settings/profile', {
+    method: 'PUT',
+    token,
+    body: payload,
+  })
+}
+
+export async function updatePassword(
+  token: string,
+  payload: { currentPassword: string; newPassword: string },
+) {
+  return request<{ message: string }>('/settings/password', {
+    method: 'PUT',
+    token,
+    body: payload,
+  })
 }
