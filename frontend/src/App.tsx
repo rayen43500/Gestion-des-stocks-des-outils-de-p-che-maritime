@@ -116,6 +116,7 @@ type Invoice = {
   totalAmount: number
   paidAmount: number
   status: 'Unpaid' | 'Partial' | 'Paid'
+  description: string
   note: string
 }
 
@@ -147,6 +148,15 @@ const INITIAL_MONTHLY_FLOWS: Array<{ month: string; value: number }> = []
 
 function numberToCurrency(value: number) {
   return `${value.toFixed(2)} MAD`
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 function appToken() {
@@ -1920,19 +1930,20 @@ function InvoicesListPage({
   clients,
   onGenerate,
   onExportXml,
+  onPrint,
 }: {
   invoices: Invoice[]
   orders: Order[]
   clients: Client[]
-  onGenerate: (payload: { id: string; orderId: string; note: string }) => Promise<void>
+  onGenerate: (payload: { id: string; orderId: string; description: string }) => Promise<void>
   onExportXml: (invoiceId: string) => Promise<void>
+  onPrint: (invoiceId: string) => Promise<void>
 }) {
   const [search, setSearch] = useState('')
   const [newInvoiceId, setNewInvoiceId] = useState(`FAC-${String(Math.floor(Math.random() * 900 + 100))}`)
   const [orderId, setOrderId] = useState(orders[0]?.id || '')
-  const [note, setNote] = useState('')
+  const [description, setDescription] = useState('')
 
-  const orderMap = useMemo(() => new Map(orders.map((order) => [order.id, order])), [orders])
   const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client.name])), [clients])
 
   const filtered = invoices.filter((invoice) => {
@@ -1946,9 +1957,9 @@ function InvoicesListPage({
   })
 
   const handleGenerate = async () => {
-    await onGenerate({ id: newInvoiceId, orderId, note })
+    await onGenerate({ id: newInvoiceId, orderId, description })
     setNewInvoiceId(`FAC-${String(Math.floor(Math.random() * 900 + 100))}`)
-    setNote('')
+    setDescription('')
   }
 
   return (
@@ -1976,8 +1987,8 @@ function InvoicesListPage({
           </label>
         </div>
         <label>
-          Note
-          <input value={note} onChange={(event) => setNote(event.target.value)} />
+          Description
+          <input value={description} onChange={(event) => setDescription(event.target.value)} />
         </label>
         <div className="action-row">
           <button className="solid-btn" type="button" onClick={() => void handleGenerate()}>
@@ -2008,6 +2019,7 @@ function InvoicesListPage({
               <th>Total</th>
               <th>Paid</th>
               <th>Status</th>
+              <th>Description</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -2020,11 +2032,12 @@ function InvoicesListPage({
                 <td>{numberToCurrency(invoice.totalAmount)}</td>
                 <td>{numberToCurrency(invoice.paidAmount)}</td>
                 <td>{invoice.status}</td>
+                <td>{invoice.description || invoice.note || '-'}</td>
                 <td className="actions-cell">
                   <button type="button" onClick={() => void onExportXml(invoice.id)}>
                     XML
                   </button>
-                  <button type="button" onClick={() => window.print()}>
+                  <button type="button" onClick={() => void onPrint(invoice.id)}>
                     Print/PDF
                   </button>
                 </td>
@@ -2662,6 +2675,7 @@ function App() {
         totalAmount: invoice.totalAmount,
         paidAmount: invoice.paidAmount,
         status: invoice.status,
+        description: invoice.description || invoice.note || '',
         note: invoice.note || '',
       })),
     )
@@ -2936,7 +2950,7 @@ function App() {
     }
   }
 
-  const generateInvoice = async (payload: { id: string; orderId: string; note: string }) => {
+  const generateInvoice = async (payload: { id: string; orderId: string; description: string }) => {
     if (!token) {
       throw new Error('Unauthorized')
     }
@@ -2971,6 +2985,99 @@ function App() {
       showSuccess('Invoice XML exported.')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Cannot export XML.'
+      showError(message)
+      throw err
+    }
+  }
+
+  const printInvoice = async (invoiceId: string) => {
+    if (!token) {
+      throw new Error('Unauthorized')
+    }
+
+    try {
+      const detail = await api.getInvoiceDetail(token, invoiceId)
+      const invoice = detail.invoice
+      const order = detail.order
+      const paymentRows = detail.payments
+      const client = clients.find((item) => item.id === invoice.clientId)
+      const productById = new Map(products.map((item) => [item.id, item.name]))
+
+      const itemsHtml = (order?.items || [])
+        .map((item) => {
+          const name = productById.get(item.productId) || item.productId
+          const lineTotal = item.quantity * item.unitPrice
+          return `<tr><td>${escapeHtml(name)}</td><td>${item.quantity}</td><td>${escapeHtml(numberToCurrency(item.unitPrice))}</td><td>${escapeHtml(numberToCurrency(lineTotal))}</td></tr>`
+        })
+        .join('')
+
+      const paymentsHtml = paymentRows.length
+        ? paymentRows
+            .map(
+              (payment) =>
+                `<tr><td>${escapeHtml(payment.id)}</td><td>${escapeHtml(numberToCurrency(payment.amount))}</td><td>${escapeHtml(payment.method)}</td><td>${escapeHtml(new Date(payment.paidAt).toLocaleString())}</td></tr>`,
+            )
+            .join('')
+        : '<tr><td colspan="4">No payments yet</td></tr>'
+
+      const doc = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Invoice ${escapeHtml(invoice.id)}</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 24px; color: #172033; }
+    h1 { margin: 0 0 8px; }
+    .meta { margin-bottom: 16px; }
+    .meta p { margin: 4px 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { border: 1px solid #d5dce8; padding: 8px; text-align: left; }
+    th { background: #f2f5fa; }
+    .totals { margin-top: 14px; }
+  </style>
+</head>
+<body>
+  <h1>Invoice ${escapeHtml(invoice.id)}</h1>
+  <div class="meta">
+    <p><strong>Order:</strong> ${escapeHtml(invoice.orderId)}</p>
+    <p><strong>Client:</strong> ${escapeHtml(client?.name || invoice.clientId)}</p>
+    <p><strong>Status:</strong> ${escapeHtml(invoice.status)}</p>
+    <p><strong>Description:</strong> ${escapeHtml(invoice.description || invoice.note || '-')}</p>
+  </div>
+
+  <h3>Items</h3>
+  <table>
+    <thead><tr><th>Product</th><th>Qty</th><th>Unit Price</th><th>Line Total</th></tr></thead>
+    <tbody>${itemsHtml}</tbody>
+  </table>
+
+  <div class="totals">
+    <p><strong>Total:</strong> ${escapeHtml(numberToCurrency(invoice.totalAmount))}</p>
+    <p><strong>Paid:</strong> ${escapeHtml(numberToCurrency(invoice.paidAmount))}</p>
+    <p><strong>Remaining:</strong> ${escapeHtml(numberToCurrency(Math.max(0, invoice.totalAmount - invoice.paidAmount)))}</p>
+  </div>
+
+  <h3>Payments</h3>
+  <table>
+    <thead><tr><th>ID</th><th>Amount</th><th>Method</th><th>Date</th></tr></thead>
+    <tbody>${paymentsHtml}</tbody>
+  </table>
+</body>
+</html>`
+
+      const printWindow = window.open('', '_blank', 'width=900,height=800')
+      if (!printWindow) {
+        throw new Error('Unable to open print window. Please allow popups.')
+      }
+
+      printWindow.document.open()
+      printWindow.document.write(doc)
+      printWindow.document.close()
+      printWindow.focus()
+      printWindow.print()
+      showSuccess(`Invoice ${invoice.id} ready for Print/PDF.`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Cannot print invoice.'
       showError(message)
       throw err
     }
@@ -3115,6 +3222,7 @@ function App() {
                 clients={clients}
                 onGenerate={generateInvoice}
                 onExportXml={exportInvoiceXml}
+                onPrint={printInvoice}
               />
             }
           />

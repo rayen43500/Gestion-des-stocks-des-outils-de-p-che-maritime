@@ -16,6 +16,15 @@ function computeInvoiceStatus(totalAmount, paidAmount) {
   return 'Partial';
 }
 
+function escapeXml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 router.get('/', async (req, res) => {
   try {
     const search = String(req.query.search || '').trim();
@@ -25,6 +34,8 @@ router.get('/', async (req, res) => {
             { id: { $regex: search, $options: 'i' } },
             { orderId: { $regex: search, $options: 'i' } },
             { clientId: { $regex: search, $options: 'i' } },
+            { description: { $regex: search, $options: 'i' } },
+            { note: { $regex: search, $options: 'i' } },
           ],
         }
       : {};
@@ -65,11 +76,11 @@ router.get('/:id/xml', async (req, res) => {
     const itemsXml = (order?.items || [])
       .map(
         (item) =>
-          `<item><productId>${item.productId}</productId><quantity>${item.quantity}</quantity><unitPrice>${item.unitPrice}</unitPrice></item>`,
+          `<item><productId>${escapeXml(item.productId)}</productId><quantity>${item.quantity}</quantity><unitPrice>${item.unitPrice}</unitPrice></item>`,
       )
       .join('');
 
-    const xml = `<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<invoice><id>${invoice.id}</id><orderId>${invoice.orderId}</orderId><clientId>${invoice.clientId}</clientId><status>${invoice.status}</status><totalAmount>${invoice.totalAmount}</totalAmount><paidAmount>${invoice.paidAmount}</paidAmount><items>${itemsXml}</items></invoice>`;
+    const xml = `<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<invoice><id>${escapeXml(invoice.id)}</id><orderId>${escapeXml(invoice.orderId)}</orderId><clientId>${escapeXml(invoice.clientId)}</clientId><status>${escapeXml(invoice.status)}</status><description>${escapeXml(invoice.description || invoice.note || '')}</description><totalAmount>${invoice.totalAmount}</totalAmount><paidAmount>${invoice.paidAmount}</paidAmount><items>${itemsXml}</items></invoice>`;
 
     res.setHeader('Content-Type', 'application/xml');
     return res.send(xml);
@@ -81,7 +92,7 @@ router.get('/:id/xml', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { id, orderId, note = '' } = req.body;
+    const { id, orderId, description = '', note = '' } = req.body;
 
     if (!id || !orderId) {
       return res.status(400).json({ message: 'Invoice id and orderId are required.' });
@@ -109,7 +120,8 @@ router.post('/', async (req, res) => {
       totalAmount: order.totalAmount,
       paidAmount: 0,
       status: 'Unpaid',
-      note,
+      description: String(description || note || '').trim(),
+      note: String(note || description || '').trim(),
     });
 
     return res.status(201).json(invoice);

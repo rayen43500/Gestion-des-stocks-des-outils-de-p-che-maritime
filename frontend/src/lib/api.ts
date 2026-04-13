@@ -83,6 +83,7 @@ export type InvoiceDto = {
   totalAmount: number
   paidAmount: number
   status: 'Unpaid' | 'Partial' | 'Paid'
+  description: string
   note: string
   createdAt: string
   updatedAt: string
@@ -358,7 +359,7 @@ export async function getInvoiceDetail(token: string, id: string) {
 
 export async function generateInvoice(
   token: string,
-  payload: { id: string; orderId: string; note: string },
+  payload: { id: string; orderId: string; description: string },
 ) {
   return request('/invoices', { method: 'POST', token, body: payload })
 }
