@@ -8,6 +8,9 @@ export type ProductDto = {
   price: number
   quantity: number
   category: string
+  productType: string
+  size: string
+  lengthCm: number
   qrCode: string
   updatedAt: string
 }
@@ -147,6 +150,13 @@ export async function login(email: string, password: string) {
   })
 }
 
+export async function forgotPassword(email: string, newPassword: string) {
+  return request<{ message: string }>('/auth/forgot-password', {
+    method: 'POST',
+    body: { email, newPassword },
+  })
+}
+
 export async function getDashboard(token: string) {
   return request<{
     totalProducts: number
@@ -171,6 +181,9 @@ export async function createProduct(
     price: number
     quantity: number
     category: string
+    productType: string
+    size: string
+    lengthCm: number
     qrCode: string
   },
 ) {
@@ -186,6 +199,9 @@ export async function updateProduct(
     price: number
     quantity: number
     category: string
+    productType: string
+    size: string
+    lengthCm: number
     qrCode: string
   },
 ) {

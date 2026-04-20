@@ -243,6 +243,36 @@
   margin-bottom: 0.55rem;
 }
 
+.check-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.92rem;
+}
+
+.check-inline input {
+  width: auto;
+}
+
+.link-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--teal-700);
+  padding: 0;
+  text-align: left;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+.forgot-card {
+  margin-top: 0.8rem;
+}
+
 .app-shell {
   min-height: 100vh;
   display: grid;

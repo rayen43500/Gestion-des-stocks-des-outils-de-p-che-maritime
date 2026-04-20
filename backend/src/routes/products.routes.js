@@ -17,6 +17,8 @@ router.get('/', async (req, res) => {
                 { id: { $regex: String(search), $options: 'i' } },
                 { name: { $regex: String(search), $options: 'i' } },
                 { description: { $regex: String(search), $options: 'i' } },
+                { productType: { $regex: String(search), $options: 'i' } },
+                { size: { $regex: String(search), $options: 'i' } },
               ],
             }
           : {},
@@ -46,10 +48,18 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { id, name, description, price, quantity, category, qrCode } = req.body;
+    const { id, name, description, price, quantity, category, productType, size, lengthCm, qrCode } = req.body;
 
-    if (!id || !name || !description || !category || !qrCode) {
+    if (!id || !name || !description || !category || !productType || !size || lengthCm === undefined || !qrCode) {
       return res.status(400).json({ message: 'Missing required fields.' });
+    }
+
+    if (!String(qrCode).trim()) {
+      return res.status(400).json({ message: 'QR code is required.' });
+    }
+
+    if (!Number.isFinite(Number(lengthCm)) || Number(lengthCm) < 0) {
+      return res.status(400).json({ message: 'lengthCm must be a valid positive number.' });
     }
 
     const existing = await Product.findOne({ id: id.trim() });
@@ -64,6 +74,9 @@ router.post('/', async (req, res) => {
       price: Number(price) || 0,
       quantity: Number(quantity) || 0,
       category: category.trim(),
+      productType: productType.trim(),
+      size: size.trim(),
+      lengthCm: Number(lengthCm),
       qrCode: qrCode.trim(),
     });
 
@@ -76,7 +89,7 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const { name, description, price, quantity, category, qrCode } = req.body;
+    const { name, description, price, quantity, category, productType, size, lengthCm, qrCode } = req.body;
 
     const product = await Product.findOne({ id: req.params.id });
     if (!product) {
@@ -88,7 +101,28 @@ router.put('/:id', async (req, res) => {
     product.price = Number.isFinite(Number(price)) ? Number(price) : product.price;
     product.quantity = Number.isFinite(Number(quantity)) ? Number(quantity) : product.quantity;
     product.category = category ?? product.category;
-    product.qrCode = qrCode ?? product.qrCode;
+    product.productType = productType ?? product.productType;
+    product.size = size ?? product.size;
+    product.lengthCm = Number.isFinite(Number(lengthCm)) ? Number(lengthCm) : product.lengthCm;
+
+    if (qrCode !== undefined) {
+      if (!String(qrCode).trim()) {
+        return res.status(400).json({ message: 'QR code cannot be empty.' });
+      }
+      product.qrCode = String(qrCode).trim();
+    }
+
+    if (!product.name || !product.description || !product.category || !product.productType || !product.size) {
+      return res.status(400).json({ message: 'Missing required product fields.' });
+    }
+
+    if (!Number.isFinite(Number(product.lengthCm)) || Number(product.lengthCm) < 0) {
+      return res.status(400).json({ message: 'lengthCm must be a valid positive number.' });
+    }
+
+    if (!String(product.qrCode || '').trim()) {
+      return res.status(400).json({ message: 'QR code is required.' });
+    }
 
     await product.save();
     return res.json(product);

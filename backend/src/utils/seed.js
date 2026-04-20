@@ -16,6 +16,9 @@ const DEFAULT_PRODUCTS = [
     price: 380,
     quantity: 26,
     category: 'Filets',
+    productType: 'Nylon Net',
+    size: 'Large',
+    lengthCm: 20000,
     qrCode: 'QR-FILET-200',
   },
   {
@@ -25,6 +28,9 @@ const DEFAULT_PRODUCTS = [
     price: 120,
     quantity: 14,
     category: 'Cordes',
+    productType: 'Marine Rope',
+    size: 'Medium',
+    lengthCm: 8000,
     qrCode: 'QR-CORDE-080',
   },
   {
@@ -34,6 +40,9 @@ const DEFAULT_PRODUCTS = [
     price: 35,
     quantity: 6,
     category: 'Securite',
+    productType: 'Marker Buoy',
+    size: 'Small',
+    lengthCm: 45,
     qrCode: 'QR-BOUEE-010',
   },
 ];

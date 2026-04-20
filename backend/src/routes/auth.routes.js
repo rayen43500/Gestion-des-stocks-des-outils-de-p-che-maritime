@@ -42,4 +42,31 @@ router.post('/login', async (req, res) => {
   }
 });
 
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    if (!email || !newPassword) {
+      return res.status(400).json({ message: 'Email and newPassword are required.' });
+    }
+
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ message: 'New password must contain at least 6 characters.' });
+    }
+
+    const user = await User.findOne({ email: String(email).toLowerCase().trim() });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    user.passwordHash = await bcrypt.hash(String(newPassword), 10);
+    await user.save();
+
+    return res.json({ message: 'Password has been reset successfully.' });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Forgot password failed.' });
+  }
+});
+
 module.exports = router;

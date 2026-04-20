@@ -43,6 +43,9 @@ type Product = {
   price: number
   quantity: number
   category: string
+  productType: string
+  size: string
+  lengthCm: number
   qrCode: string
   updatedAt: string
 }
@@ -269,14 +272,23 @@ function PublicHome({ authenticated }: { authenticated: boolean }) {
 
 function LoginPage({
   onLogin,
+  onForgotPassword,
 }: {
   onLogin: (email: string, password: string) => Promise<void>
+  onForgotPassword: (email: string, newPassword: string) => Promise<void>
 }) {
   const navigate = useNavigate()
   const [email, setEmail] = useState('admin@marine.local')
   const [password, setPassword] = useState('admin123')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [forgotOpen, setForgotOpen] = useState(false)
+  const [forgotEmail, setForgotEmail] = useState('admin@marine.local')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [forgotError, setForgotError] = useState('')
+  const [forgotSubmitting, setForgotSubmitting] = useState(false)
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -296,6 +308,38 @@ function LoginPage({
       setError(message)
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleForgotSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (!forgotEmail || !newPassword || !confirmPassword) {
+      setForgotError('Please fill all forgot-password fields.')
+      return
+    }
+    if (newPassword.length < 6) {
+      setForgotError('New password must contain at least 6 characters.')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setForgotError('New password and confirmation do not match.')
+      return
+    }
+
+    try {
+      setForgotSubmitting(true)
+      setForgotError('')
+      await onForgotPassword(forgotEmail, newPassword)
+      setForgotOpen(false)
+      setPassword(newPassword)
+      setConfirmPassword('')
+      setNewPassword('')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Forgot password failed.'
+      setForgotError(message)
+    } finally {
+      setForgotSubmitting(false)
     }
   }
 
@@ -321,11 +365,24 @@ function LoginPage({
         <label htmlFor="password">Password</label>
         <input
           id="password"
-          type="password"
+          type={showPassword ? 'text' : 'password'}
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           placeholder="********"
         />
+
+        <label className="check-inline">
+          <input
+            type="checkbox"
+            checked={showPassword}
+            onChange={(event) => setShowPassword(event.target.checked)}
+          />
+          <span>Show password</span>
+        </label>
+
+        <button className="link-btn" type="button" onClick={() => setForgotOpen(true)}>
+          Forgot password?
+        </button>
 
         {error ? <p className="error-text">{error}</p> : null}
 
@@ -334,6 +391,48 @@ function LoginPage({
           {submitting ? 'Signing in...' : 'Sign in'}
         </button>
       </form>
+
+      {forgotOpen ? (
+        <form className="auth-card forgot-card" onSubmit={handleForgotSubmit}>
+          <h2>Reset password</h2>
+          <p className="muted">Set a new password for your account.</p>
+
+          <label htmlFor="forgotEmail">Email</label>
+          <input
+            id="forgotEmail"
+            type="email"
+            value={forgotEmail}
+            onChange={(event) => setForgotEmail(event.target.value)}
+          />
+
+          <label htmlFor="newPassword">New password</label>
+          <input
+            id="newPassword"
+            type="password"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+          />
+
+          <label htmlFor="confirmPassword">Confirm password</label>
+          <input
+            id="confirmPassword"
+            type="password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+          />
+
+          {forgotError ? <p className="error-text">{forgotError}</p> : null}
+
+          <div className="action-row">
+            <button className="solid-btn" type="submit" disabled={forgotSubmitting}>
+              {forgotSubmitting ? 'Resetting...' : 'Reset password'}
+            </button>
+            <button className="ghost-btn" type="button" onClick={() => setForgotOpen(false)}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : null}
     </div>
   )
 }
@@ -591,6 +690,8 @@ function ProductsListPage({
     const matchesText =
       product.name.toLowerCase().includes(term) ||
       product.description.toLowerCase().includes(term) ||
+      product.productType.toLowerCase().includes(term) ||
+      product.size.toLowerCase().includes(term) ||
       product.id.toLowerCase().includes(term)
     const matchesCategory = category === 'all' || product.category === category
     const matchesQr = !scanCode || product.qrCode.toLowerCase().includes(scanCode.toLowerCase())
@@ -672,6 +773,9 @@ function ProductsListPage({
               <th>ID</th>
               <th>Name</th>
               <th>Category</th>
+              <th>Type</th>
+              <th>Size</th>
+              <th>Length</th>
               <th>Price</th>
               <th>Qty</th>
               <th>Actions</th>
@@ -683,6 +787,9 @@ function ProductsListPage({
                 <td>{product.id}</td>
                 <td>{product.name}</td>
                 <td>{product.category}</td>
+                <td>{product.productType}</td>
+                <td>{product.size}</td>
+                <td>{product.lengthCm} cm</td>
                 <td>{numberToCurrency(product.price)}</td>
                 <td>
                   <span className={product.quantity < 8 ? 'tag danger' : 'tag ok'}>
@@ -722,6 +829,9 @@ function ProductFormPage({
       price: 0,
       quantity: 0,
       category: 'Filets',
+      productType: '',
+      size: '',
+      lengthCm: 0,
       qrCode: '',
     },
   )
@@ -731,8 +841,16 @@ function ProductFormPage({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!form.name || !form.description || !form.category || !form.qrCode) {
-      setError('Please fill all fields.')
+    if (!form.name || !form.description || !form.category || !form.productType || !form.size) {
+      setError('Please fill all product fields.')
+      return
+    }
+    if (form.lengthCm < 0) {
+      setError('Length must be a valid positive value.')
+      return
+    }
+    if (!form.qrCode.trim()) {
+      setError('QR code is required. You cannot save a product without QR code.')
       return
     }
 
@@ -777,6 +895,36 @@ function ProductFormPage({
             <input
               value={form.category}
               onChange={(event) => setForm((prev) => ({ ...prev, category: event.target.value }))}
+            />
+          </label>
+
+          <label>
+            Product type
+            <input
+              value={form.productType}
+              onChange={(event) => setForm((prev) => ({ ...prev, productType: event.target.value }))}
+              placeholder="Ex: Nylon Net"
+            />
+          </label>
+
+          <label>
+            Size
+            <input
+              value={form.size}
+              onChange={(event) => setForm((prev) => ({ ...prev, size: event.target.value }))}
+              placeholder="Ex: Large"
+            />
+          </label>
+
+          <label>
+            Length (cm)
+            <input
+              type="number"
+              min="0"
+              value={form.lengthCm}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, lengthCm: Number(event.target.value) }))
+              }
             />
           </label>
 
@@ -871,6 +1019,15 @@ function ProductDetailPage({ products }: { products: Product[] }) {
           </li>
           <li>
             <strong>Category:</strong> {product.category}
+          </li>
+          <li>
+            <strong>Type:</strong> {product.productType}
+          </li>
+          <li>
+            <strong>Size:</strong> {product.size}
+          </li>
+          <li>
+            <strong>Length:</strong> {product.lengthCm} cm
           </li>
           <li>
             <strong>Price:</strong> {numberToCurrency(product.price)}
@@ -2614,6 +2771,9 @@ function App() {
         price: product.price,
         quantity: product.quantity,
         category: product.category,
+        productType: product.productType || '',
+        size: product.size || '',
+        lengthCm: Number(product.lengthCm) || 0,
         qrCode: product.qrCode,
         updatedAt: product.updatedAt,
       })),
@@ -2717,6 +2877,17 @@ function App() {
     }
   }
 
+  const forgotPassword = async (email: string, newPassword: string) => {
+    try {
+      await api.forgotPassword(email, newPassword)
+      showSuccess('Password reset successful. You can now login with the new password.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Forgot password failed.'
+      showError(message)
+      throw err
+    }
+  }
+
   const logout = () => {
     localStorage.removeItem('auth_token')
     setToken(null)
@@ -2757,6 +2928,9 @@ function App() {
           price: payload.price,
           quantity: payload.quantity,
           category: payload.category,
+          productType: payload.productType,
+          size: payload.size,
+          lengthCm: payload.lengthCm,
           qrCode: payload.qrCode,
         })
       } else {
@@ -3143,7 +3317,11 @@ function App() {
         <Route
           path="/login"
           element={
-            authenticated ? <Navigate to="/dashboard" replace /> : <LoginPage onLogin={login} />
+            authenticated ? (
+              <Navigate to="/dashboard" replace />
+            ) : (
+              <LoginPage onLogin={login} onForgotPassword={forgotPassword} />
+            )
           }
         />
 
