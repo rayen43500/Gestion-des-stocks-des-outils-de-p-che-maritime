@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
+import jsQR from 'jsqr'
 import {
   AlertTriangle,
   ArrowDownCircle,
@@ -150,7 +151,7 @@ const INITIAL_ORDERS: DashboardOrder[] = []
 const INITIAL_MONTHLY_FLOWS: Array<{ month: string; value: number }> = []
 
 function numberToCurrency(value: number) {
-  return `${value.toFixed(2)} MAD`
+  return `${value.toFixed(2)} DT`
 }
 
 function escapeHtml(value: string) {
@@ -377,7 +378,7 @@ function LoginPage({
             checked={showPassword}
             onChange={(event) => setShowPassword(event.target.checked)}
           />
-          <span>Show password</span>
+          <span>Afficher mot de passe</span>
         </label>
 
         <button className="link-btn" type="button" onClick={() => setForgotOpen(true)}>
@@ -625,12 +626,7 @@ function ProductsListPage({
         setScannerError('')
 
         const BarcodeDetectorCtor = (window as Window & { BarcodeDetector?: any }).BarcodeDetector
-        if (!BarcodeDetectorCtor) {
-          setScannerError('QR scanner is not supported by this browser. Use Chrome/Edge.')
-          return
-        }
-
-        const detector = new BarcodeDetectorCtor({ formats: ['qr_code'] })
+        const detector = BarcodeDetectorCtor ? new BarcodeDetectorCtor({ formats: ['qr_code'] }) : null
 
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment' },
@@ -655,9 +651,32 @@ function ProductsListPage({
           }
 
           try {
-            const codes = await detector.detect(videoRef.current)
-            if (codes && codes.length > 0 && codes[0]?.rawValue) {
-              const value = String(codes[0].rawValue).trim()
+            if (detector) {
+              const codes = await detector.detect(videoRef.current)
+              if (codes && codes.length > 0 && codes[0]?.rawValue) {
+                const value = String(codes[0].rawValue).trim()
+                if (value) {
+                  setScanCode(value)
+                  setScannerOpen(false)
+                }
+              }
+              return
+            }
+
+            const canvas = document.createElement('canvas')
+            canvas.width = videoRef.current.videoWidth
+            canvas.height = videoRef.current.videoHeight
+            const ctx = canvas.getContext('2d', { willReadFrequently: true })
+            if (!ctx) {
+              return
+            }
+
+            ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height)
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+            const qrResult = jsQR(imageData.data, imageData.width, imageData.height)
+
+            if (qrResult?.data) {
+              const value = String(qrResult.data).trim()
               if (value) {
                 setScanCode(value)
                 setScannerOpen(false)
@@ -715,7 +734,7 @@ function ProductsListPage({
           <Search size={16} />
           <input
             type="text"
-            placeholder="Search by name, id, description..."
+            placeholder="Search by label, id, description..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -771,7 +790,7 @@ function ProductsListPage({
           <thead>
             <tr>
               <th>ID</th>
-              <th>Name</th>
+              <th>Label</th>
               <th>Category</th>
               <th>Type</th>
               <th>Size</th>
@@ -837,7 +856,109 @@ function ProductFormPage({
   )
 
   const [error, setError] = useState('')
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [scannerError, setScannerError] = useState('')
   const isEdit = Boolean(product)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const scanTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!scannerOpen) {
+      return
+    }
+
+    let isCancelled = false
+
+    const stopScanner = () => {
+      if (scanTimerRef.current !== null) {
+        window.clearInterval(scanTimerRef.current)
+        scanTimerRef.current = null
+      }
+
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop())
+        streamRef.current = null
+      }
+    }
+
+    const startScanner = async () => {
+      try {
+        setScannerError('')
+
+        const BarcodeDetectorCtor = (window as Window & { BarcodeDetector?: any }).BarcodeDetector
+        const detector = BarcodeDetectorCtor ? new BarcodeDetectorCtor({ formats: ['qr_code'] }) : null
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' },
+          audio: false,
+        })
+
+        if (isCancelled) {
+          stream.getTracks().forEach((track) => track.stop())
+          return
+        }
+
+        streamRef.current = stream
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          await videoRef.current.play()
+        }
+
+        scanTimerRef.current = window.setInterval(async () => {
+          if (!videoRef.current || videoRef.current.readyState < 2) {
+            return
+          }
+
+          try {
+            if (detector) {
+              const codes = await detector.detect(videoRef.current)
+              if (codes && codes.length > 0 && codes[0]?.rawValue) {
+                const value = String(codes[0].rawValue).trim()
+                if (value) {
+                  setForm((prev) => ({ ...prev, qrCode: value }))
+                  setScannerOpen(false)
+                }
+              }
+              return
+            }
+
+            const canvas = document.createElement('canvas')
+            canvas.width = videoRef.current.videoWidth
+            canvas.height = videoRef.current.videoHeight
+            const ctx = canvas.getContext('2d', { willReadFrequently: true })
+            if (!ctx) {
+              return
+            }
+
+            ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height)
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+            const qrResult = jsQR(imageData.data, imageData.width, imageData.height)
+
+            if (qrResult?.data) {
+              const value = String(qrResult.data).trim()
+              if (value) {
+                setForm((prev) => ({ ...prev, qrCode: value }))
+                setScannerOpen(false)
+              }
+            }
+          } catch {
+            // Ignore detection frame errors and keep scanning
+          }
+        }, 350)
+      } catch {
+        setScannerError('Camera access refused or unavailable.')
+      }
+    }
+
+    void startScanner()
+
+    return () => {
+      isCancelled = true
+      stopScanner()
+    }
+  }, [scannerOpen])
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -883,7 +1004,7 @@ function ProductFormPage({
           </label>
 
           <label>
-            Name
+            Label
             <input
               value={form.name}
               onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
@@ -954,12 +1075,34 @@ function ProductFormPage({
 
           <label>
             QR code
-            <input
-              value={form.qrCode}
-              onChange={(event) => setForm((prev) => ({ ...prev, qrCode: event.target.value }))}
-            />
+            <div className="qr-input-row">
+              <input
+                value={form.qrCode}
+                onChange={(event) => setForm((prev) => ({ ...prev, qrCode: event.target.value }))}
+              />
+              <button className="ghost-btn" type="button" onClick={() => setScannerOpen(true)}>
+                <QrCode size={16} /> Scanner QR
+              </button>
+            </div>
           </label>
         </div>
+
+        {scannerOpen ? (
+          <section className="scanner-modal" role="dialog" aria-modal="true">
+            <div className="scanner-card">
+              <div className="section-header inline small">
+                <h3>QR Scanner</h3>
+                <button className="ghost-btn" type="button" onClick={() => setScannerOpen(false)}>
+                  Close
+                </button>
+              </div>
+
+              <video ref={videoRef} className="scanner-video" muted playsInline />
+              <p className="muted">Place the QR code inside camera view.</p>
+              {scannerError ? <p className="error-text">{scannerError}</p> : null}
+            </div>
+          </section>
+        ) : null}
 
         <label>
           Description

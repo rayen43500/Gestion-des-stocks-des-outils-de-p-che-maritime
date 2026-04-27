@@ -615,6 +615,13 @@ th {
   font-size: 0.95rem;
 }
 
+.qr-input-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .checkbox-grid {
   margin-top: 0.6rem;
   display: grid;
