@@ -11,7 +11,7 @@ export type ProductDto = {
   productType: string
   size: string
   lengthCm: number
-  qrCode: string
+  barcode: string
   updatedAt: string
 }
 
@@ -184,7 +184,7 @@ export async function createProduct(
     productType: string
     size: string
     lengthCm: number
-    qrCode: string
+    barcode: string
   },
 ) {
   return request('/products', { method: 'POST', token, body: payload })
@@ -202,7 +202,7 @@ export async function updateProduct(
     productType: string
     size: string
     lengthCm: number
-    qrCode: string
+    barcode: string
   },
 ) {
   return request(`/products/${id}`, { method: 'PUT', token, body: payload })

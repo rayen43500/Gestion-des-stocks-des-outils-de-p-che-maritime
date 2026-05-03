@@ -15,7 +15,7 @@ import {
   LogIn,
   LogOut,
   PackagePlus,
-  QrCode,
+  Barcode,
   Search,
   Settings,
   Truck,
@@ -47,7 +47,7 @@ type Product = {
   productType: string
   size: string
   lengthCm: number
-  qrCode: string
+  barcode: string
   updatedAt: string
 }
 
@@ -246,7 +246,7 @@ function PublicHome({ authenticated }: { authenticated: boolean }) {
         <article>
           <Boxes size={22} />
           <h3>Products</h3>
-          <p>Manage fishing tools with details, pricing and QR code support.</p>
+          <p>Manage fishing tools with details, pricing and barcode support.</p>
         </article>
         <article>
           <Truck size={22} />
@@ -626,7 +626,7 @@ function ProductsListPage({
         setScannerError('')
 
         const BarcodeDetectorCtor = (window as Window & { BarcodeDetector?: any }).BarcodeDetector
-        const detector = BarcodeDetectorCtor ? new BarcodeDetectorCtor({ formats: ['qr_code'] }) : null
+        const detector = BarcodeDetectorCtor ? new BarcodeDetectorCtor({ formats: ['code_128', 'ean_13', 'upc_a', 'qr_code'] }) : null
 
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment' },
@@ -673,10 +673,10 @@ function ProductsListPage({
 
             ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height)
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-            const qrResult = jsQR(imageData.data, imageData.width, imageData.height)
+            const scanResult = jsQR(imageData.data, imageData.width, imageData.height)
 
-            if (qrResult?.data) {
-              const value = String(qrResult.data).trim()
+            if (scanResult?.data) {
+              const value = String(scanResult.data).trim()
               if (value) {
                 setScanCode(value)
                 setScannerOpen(false)
@@ -713,8 +713,8 @@ function ProductsListPage({
       product.size.toLowerCase().includes(term) ||
       product.id.toLowerCase().includes(term)
     const matchesCategory = category === 'all' || product.category === category
-    const matchesQr = !scanCode || product.qrCode.toLowerCase().includes(scanCode.toLowerCase())
-    return matchesText && matchesCategory && matchesQr
+    const matchesBarcode = !scanCode || product.barcode.toLowerCase().includes(scanCode.toLowerCase())
+    return matchesText && matchesCategory && matchesBarcode
   })
 
   return (
@@ -752,10 +752,10 @@ function ProductsListPage({
         </label>
 
         <label>
-          <QrCode size={16} />
+          <Barcode size={16} />
           <input
             type="text"
-            placeholder="QR scan code"
+            placeholder="Barcode scan value"
             value={scanCode}
             onChange={(event) => setScanCode(event.target.value)}
           />
@@ -764,7 +764,7 @@ function ProductsListPage({
 
       <section className="scanner-bar">
         <button className="ghost-btn" type="button" onClick={() => setScannerOpen(true)}>
-          <QrCode size={16} /> Scan QR code
+          <Barcode size={16} /> Scan Barcode
         </button>
       </section>
 
@@ -772,14 +772,14 @@ function ProductsListPage({
         <section className="scanner-modal" role="dialog" aria-modal="true">
           <div className="scanner-card">
             <div className="section-header inline small">
-              <h3>QR Scanner</h3>
+              <h3>Barcode Scanner</h3>
               <button className="ghost-btn" type="button" onClick={() => setScannerOpen(false)}>
                 Close
               </button>
             </div>
 
             <video ref={videoRef} className="scanner-video" muted playsInline />
-            <p className="muted">Place the QR code inside camera view.</p>
+            <p className="muted">Place the barcode inside camera view.</p>
             {scannerError ? <p className="error-text">{scannerError}</p> : null}
           </div>
         </section>
@@ -851,7 +851,7 @@ function ProductFormPage({
       productType: '',
       size: '',
       lengthCm: 0,
-      qrCode: '',
+      barcode: '',
     },
   )
 
@@ -887,7 +887,7 @@ function ProductFormPage({
         setScannerError('')
 
         const BarcodeDetectorCtor = (window as Window & { BarcodeDetector?: any }).BarcodeDetector
-        const detector = BarcodeDetectorCtor ? new BarcodeDetectorCtor({ formats: ['qr_code'] }) : null
+        const detector = BarcodeDetectorCtor ? new BarcodeDetectorCtor({ formats: ['code_128', 'ean_13', 'upc_a', 'qr_code'] }) : null
 
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment' },
@@ -917,7 +917,7 @@ function ProductFormPage({
               if (codes && codes.length > 0 && codes[0]?.rawValue) {
                 const value = String(codes[0].rawValue).trim()
                 if (value) {
-                  setForm((prev) => ({ ...prev, qrCode: value }))
+                  setForm((prev) => ({ ...prev, barcode: value }))
                   setScannerOpen(false)
                 }
               }
@@ -934,12 +934,12 @@ function ProductFormPage({
 
             ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height)
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-            const qrResult = jsQR(imageData.data, imageData.width, imageData.height)
+            const scanResult = jsQR(imageData.data, imageData.width, imageData.height)
 
-            if (qrResult?.data) {
-              const value = String(qrResult.data).trim()
+            if (scanResult?.data) {
+              const value = String(scanResult.data).trim()
               if (value) {
-                setForm((prev) => ({ ...prev, qrCode: value }))
+                setForm((prev) => ({ ...prev, barcode: value }))
                 setScannerOpen(false)
               }
             }
@@ -970,8 +970,8 @@ function ProductFormPage({
       setError('Length must be a valid positive value.')
       return
     }
-    if (!form.qrCode.trim()) {
-      setError('QR code is required. You cannot save a product without QR code.')
+    if (!form.barcode.trim()) {
+      setError('Barcode is required. You cannot save a product without a barcode.')
       return
     }
 
@@ -1074,14 +1074,14 @@ function ProductFormPage({
           </label>
 
           <label>
-            QR code
+            Barcode
             <div className="qr-input-row">
               <input
-                value={form.qrCode}
-                onChange={(event) => setForm((prev) => ({ ...prev, qrCode: event.target.value }))}
+                value={form.barcode}
+                onChange={(event) => setForm((prev) => ({ ...prev, barcode: event.target.value }))}
               />
               <button className="ghost-btn" type="button" onClick={() => setScannerOpen(true)}>
-                <QrCode size={16} /> Scanner QR
+                <Barcode size={16} /> Scanner Barcode
               </button>
             </div>
           </label>
@@ -1091,14 +1091,14 @@ function ProductFormPage({
           <section className="scanner-modal" role="dialog" aria-modal="true">
             <div className="scanner-card">
               <div className="section-header inline small">
-                <h3>QR Scanner</h3>
+                <h3>Barcode Scanner</h3>
                 <button className="ghost-btn" type="button" onClick={() => setScannerOpen(false)}>
                   Close
                 </button>
               </div>
 
               <video ref={videoRef} className="scanner-video" muted playsInline />
-              <p className="muted">Place the QR code inside camera view.</p>
+              <p className="muted">Place the barcode inside camera view.</p>
               {scannerError ? <p className="error-text">{scannerError}</p> : null}
             </div>
           </section>
@@ -1179,7 +1179,7 @@ function ProductDetailPage({ products }: { products: Product[] }) {
             <strong>Quantity:</strong> {product.quantity}
           </li>
           <li>
-            <strong>QR:</strong> {product.qrCode}
+            <strong>Barcode:</strong> {product.barcode}
           </li>
         </ul>
       </article>

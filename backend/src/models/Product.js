@@ -11,7 +11,7 @@ const productSchema = new mongoose.Schema(
     productType: { type: String, trim: true, default: '' },
     size: { type: String, trim: true, default: '' },
     lengthCm: { type: Number, min: 0, default: 0 },
-    qrCode: { type: String, required: true, trim: true },
+    barcode: { type: String, required: true, trim: true },
   },
   { timestamps: true },
 );

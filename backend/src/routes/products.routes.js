@@ -5,12 +5,12 @@ const router = express.Router();
 
 router.get('/', async (req, res) => {
   try {
-    const { search = '', category = 'all', qr = '' } = req.query;
+    const { search = '', category = 'all', barcode = '' } = req.query;
 
     const query = {
       $and: [
         category !== 'all' ? { category } : {},
-        qr ? { qrCode: { $regex: String(qr), $options: 'i' } } : {},
+        barcode ? { barcode: { $regex: String(barcode), $options: 'i' } } : {},
         search
           ? {
               $or: [
@@ -48,14 +48,14 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { id, name, description, price, quantity, category, productType, size, lengthCm, qrCode } = req.body;
+    const { id, name, description, price, quantity, category, productType, size, lengthCm, barcode } = req.body;
 
-    if (!id || !name || !description || !category || !productType || !size || lengthCm === undefined || !qrCode) {
+    if (!id || !name || !description || !category || !productType || !size || lengthCm === undefined || !barcode) {
       return res.status(400).json({ message: 'Missing required fields.' });
     }
 
-    if (!String(qrCode).trim()) {
-      return res.status(400).json({ message: 'QR code is required.' });
+    if (!String(barcode).trim()) {
+      return res.status(400).json({ message: 'Barcode is required.' });
     }
 
     if (!Number.isFinite(Number(lengthCm)) || Number(lengthCm) < 0) {
@@ -77,7 +77,7 @@ router.post('/', async (req, res) => {
       productType: productType.trim(),
       size: size.trim(),
       lengthCm: Number(lengthCm),
-      qrCode: qrCode.trim(),
+      barcode: barcode.trim(),
     });
 
     return res.status(201).json(product);
@@ -89,7 +89,7 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const { name, description, price, quantity, category, productType, size, lengthCm, qrCode } = req.body;
+    const { name, description, price, quantity, category, productType, size, lengthCm, barcode } = req.body;
 
     const product = await Product.findOne({ id: req.params.id });
     if (!product) {
@@ -105,11 +105,11 @@ router.put('/:id', async (req, res) => {
     product.size = size ?? product.size;
     product.lengthCm = Number.isFinite(Number(lengthCm)) ? Number(lengthCm) : product.lengthCm;
 
-    if (qrCode !== undefined) {
-      if (!String(qrCode).trim()) {
-        return res.status(400).json({ message: 'QR code cannot be empty.' });
+    if (barcode !== undefined) {
+      if (!String(barcode).trim()) {
+        return res.status(400).json({ message: 'Barcode cannot be empty.' });
       }
-      product.qrCode = String(qrCode).trim();
+      product.barcode = String(barcode).trim();
     }
 
     if (!product.name || !product.description || !product.category || !product.productType || !product.size) {
@@ -120,8 +120,8 @@ router.put('/:id', async (req, res) => {
       return res.status(400).json({ message: 'lengthCm must be a valid positive number.' });
     }
 
-    if (!String(product.qrCode || '').trim()) {
-      return res.status(400).json({ message: 'QR code is required.' });
+    if (!String(product.barcode || '').trim()) {
+      return res.status(400).json({ message: 'Barcode is required.' });
     }
 
     await product.save();

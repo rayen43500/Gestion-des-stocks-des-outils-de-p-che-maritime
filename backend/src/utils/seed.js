@@ -19,7 +19,7 @@ const DEFAULT_PRODUCTS = [
     productType: 'Nylon Net',
     size: 'Large',
     lengthCm: 20000,
-    qrCode: 'QR-FILET-200',
+    barcode: 'QR-FILET-200',
   },
   {
     id: 'P-002',
@@ -31,7 +31,7 @@ const DEFAULT_PRODUCTS = [
     productType: 'Marine Rope',
     size: 'Medium',
     lengthCm: 8000,
-    qrCode: 'QR-CORDE-080',
+    barcode: 'QR-CORDE-080',
   },
   {
     id: 'P-003',
@@ -43,7 +43,7 @@ const DEFAULT_PRODUCTS = [
     productType: 'Marker Buoy',
     size: 'Small',
     lengthCm: 45,
-    qrCode: 'QR-BOUEE-010',
+    barcode: 'QR-BOUEE-010',
   },
 ];
 
