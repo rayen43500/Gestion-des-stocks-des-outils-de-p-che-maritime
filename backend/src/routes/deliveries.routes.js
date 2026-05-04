@@ -115,9 +115,10 @@ router.post('/', async (req, res) => {
     }
 
     for (const item of normalizedItems) {
-      const product = productById.get(item.productId);
-      product.quantity -= item.quantityDelivered;
-      await product.save();
+      await Product.updateOne(
+        { id: item.productId },
+        { $inc: { quantity: -item.quantityDelivered } },
+      );
 
       await StockMovement.create({
         productId: item.productId,

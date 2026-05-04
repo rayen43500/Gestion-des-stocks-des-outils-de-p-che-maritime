@@ -2068,15 +2068,27 @@ function DeliveriesListPage({
 function DeliveryFormPage({
   orders,
   products,
+  deliveries,
   onSubmit,
 }: {
   orders: Order[]
   products: Product[]
+  deliveries: Delivery[]
   onSubmit: (payload: Omit<Delivery, 'createdAt'>) => Promise<void>
 }) {
   const navigate = useNavigate()
+  const nextId = useMemo(() => {
+    const prefix = 'BL-'
+    const numbers = deliveries
+      .map((delivery) => delivery.id)
+      .filter((id) => id.startsWith(prefix))
+      .map((id) => Number(id.slice(prefix.length)))
+      .filter((value) => Number.isFinite(value))
+    const max = numbers.length > 0 ? Math.max(...numbers) : 0
+    return `${prefix}${String(max + 1).padStart(4, '0')}`
+  }, [deliveries])
   const [form, setForm] = useState<Omit<Delivery, 'createdAt'>>({
-    id: `BL-${String(Math.floor(Math.random() * 900 + 100))}`,
+    id: nextId,
     orderId: orders[0]?.id || '',
     items: [],
     status: 'InTransit',
@@ -2084,8 +2096,32 @@ function DeliveryFormPage({
   })
   const [error, setError] = useState('')
 
+  const order = useMemo(() => orders.find((item) => item.id === form.orderId), [form.orderId, orders])
+  const deliveredByProduct = useMemo(() => {
+    if (!order) {
+      return new Map<string, number>()
+    }
+    const map = new Map<string, number>()
+    deliveries
+      .filter((delivery) => delivery.orderId === order.id)
+      .forEach((delivery) => {
+        delivery.items.forEach((item) => {
+          map.set(item.productId, (map.get(item.productId) || 0) + item.quantityDelivered)
+        })
+      })
+    return map
+  }, [deliveries, order])
+
+  const remainingByProduct = useMemo(() => {
+    const map = new Map<string, number>()
+    order?.items.forEach((item) => {
+      const delivered = deliveredByProduct.get(item.productId) || 0
+      map.set(item.productId, Math.max(item.quantity - delivered, 0))
+    })
+    return map
+  }, [deliveredByProduct, order])
+
   useEffect(() => {
-    const order = orders.find((item) => item.id === form.orderId)
     if (!order) {
       return
     }
@@ -2094,15 +2130,22 @@ function DeliveryFormPage({
       items:
         prev.items.length > 0
           ? prev.items
-          : order.items.map((item) => ({ productId: item.productId, quantityDelivered: 1 })),
+          : order.items
+              .map((item) => ({
+                productId: item.productId,
+                quantityDelivered: remainingByProduct.get(item.productId) || 0,
+              }))
+              .filter((item) => item.quantityDelivered > 0),
     }))
-  }, [form.orderId, orders])
+  }, [form.orderId, order, remainingByProduct])
 
   const updateItemQty = (productId: string, qty: number) => {
+    const max = remainingByProduct.get(productId) || 0
+    const safeQty = Math.min(Math.max(qty, 1), max || 1)
     setForm((prev) => ({
       ...prev,
       items: prev.items.map((item) =>
-        item.productId === productId ? { ...item, quantityDelivered: qty } : item,
+        item.productId === productId ? { ...item, quantityDelivered: safeQty } : item,
       ),
     }))
   }
@@ -2111,6 +2154,10 @@ function DeliveryFormPage({
     event.preventDefault()
     if (!form.id || !form.orderId || form.items.length === 0) {
       setError('Delivery id, order and at least one line are required.')
+      return
+    }
+    if (form.items.some((item) => (remainingByProduct.get(item.productId) || 0) <= 0)) {
+      setError('All ordered quantities have already been delivered.')
       return
     }
     if (form.items.some((item) => item.quantityDelivered <= 0)) {
@@ -2129,6 +2176,15 @@ function DeliveryFormPage({
   }
 
   const productById = useMemo(() => new Map(products.map((p) => [p.id, p.name])), [products])
+  const remainingItems = order?.items
+    .map((item) => ({
+      productId: item.productId,
+      orderedQty: item.quantity,
+      remainingQty: remainingByProduct.get(item.productId) || 0,
+    }))
+    .filter((item) => item.remainingQty > 0)
+
+  const noRemaining = !remainingItems || remainingItems.length === 0
 
   return (
     <div className="page-grid">
@@ -2179,7 +2235,9 @@ function DeliveryFormPage({
             <thead>
               <tr>
                 <th>Product</th>
-                <th>Delivered Qty</th>
+                <th>Ordered Qty</th>
+                <th>Remaining</th>
+                <th>Deliver Now</th>
               </tr>
             </thead>
             <tbody>
@@ -2187,9 +2245,14 @@ function DeliveryFormPage({
                 <tr key={item.productId}>
                   <td>{productById.get(item.productId) || item.productId}</td>
                   <td>
+                    {order?.items.find((line) => line.productId === item.productId)?.quantity || 0}
+                  </td>
+                  <td>{remainingByProduct.get(item.productId) || 0}</td>
+                  <td>
                     <input
                       type="number"
                       min="1"
+                      max={remainingByProduct.get(item.productId) || 1}
                       value={item.quantityDelivered}
                       onChange={(event) => updateItemQty(item.productId, Number(event.target.value))}
                     />
@@ -2198,6 +2261,7 @@ function DeliveryFormPage({
               ))}
             </tbody>
           </table>
+          {noRemaining ? <p className="muted-text">All items for this order are already delivered.</p> : null}
         </section>
 
         <label>
@@ -2212,7 +2276,7 @@ function DeliveryFormPage({
         {error ? <p className="error-text">{error}</p> : null}
 
         <div className="action-row">
-          <button className="solid-btn" type="submit">
+          <button className="solid-btn" type="submit" disabled={noRemaining}>
             Create delivery
           </button>
           <button className="ghost-btn" type="button" onClick={() => navigate('/deliveries')}>
@@ -3531,7 +3595,9 @@ function App() {
           <Route path="/deliveries" element={<DeliveriesListPage deliveries={deliveries} orders={orders} />} />
           <Route
             path="/deliveries/new"
-            element={<DeliveryFormPage orders={orders} products={products} onSubmit={addDelivery} />}
+            element={
+              <DeliveryFormPage orders={orders} products={products} deliveries={deliveries} onSubmit={addDelivery} />
+            }
           />
 
           <Route
